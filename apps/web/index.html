@@ -14,9 +14,15 @@
       SVG jest wersja pierwsza (ostra w kazdym rozmiarze), a .ico zostaje dla
       przegladarek, ktore SVG nie przyjmuja, i dla skrotow przypinanych
       w systemie. Oba pliki powstaja z jednego wzoru - patrz tools/make-favicon.mjs.
+
+      "?v=" w adresie jest KONIECZNE dla kazdego, kto odwiedzil strone, zanim
+      ikona istniala: przegladarki trzymaja ikony w osobnej pamieci podrecznej,
+      ktorej zwykle przeladowanie strony nie odswieza - zapamietany "brak ikony"
+      potrafi zostac na tygodnie. Nowy adres to dla tej pamieci nowa ikona.
+      Przy zmianie znaku podbij numer w OBU wierszach.
     -->
-    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="alternate icon" href="./favicon.ico" sizes="16x16 32x32" />
+    <link rel="icon" href="./favicon.svg?v=1" type="image/svg+xml" />
+    <link rel="alternate icon" href="./favicon.ico?v=1" sizes="16x16 32x32" />
     <!--
       Wlacza izolacje miedzy zrodlami na hostingu, ktory nie umie ustawic naglowkow
       (np. GitHub Pages). Bez niej nie ma pamieci dzielonej, a bez pamieci dzielonej
