@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZL3AVR Emulator — ATmega32</title>
+    <!--
+      Wlacza izolacje miedzy zrodlami na hostingu, ktory nie umie ustawic naglowkow
+      (np. GitHub Pages). Bez niej nie ma pamieci dzielonej, a bez pamieci dzielonej
+      skrypt Pythona nie ma jak poczekac na ramke z plytki. Serwer deweloperski
+      ustawia te naglowki sam i wtedy ten skrypt nic nie robi.
+      Ladujemy go PRZED aplikacja, zeby ewentualne przeladowanie stalo sie od razu.
+    -->
+    <script src="./coi-serviceworker.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,686 @@
+import Editor, { type OnMount } from '@monaco-editor/react'
+import type * as Monaco from 'monaco-editor'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSimulator, useSimulatorEvents } from '../sim/SimulationContext'
+import { describeWiring } from '@zl3avr/board'
+import { analyse, type Diagnostic } from '../ide/diagnostics'
+import type { CompilerDiagnostic } from '../ide/toolchain'
+import {
+  Project,
+  downloadFile,
+  downloadProject,
+  languageOf,
+  validateName,
+  type ProjectFile,
+} from '../ide/project'
+
+/**
+ * Edytor kodu.
+ *
+ * Poza samym pisaniem daje trzy rzeczy, ktorych student nie dostanie
+ * od zwyklego edytora tekstu:
+ *
+ *   - PODPOWIEDZI z opisem, czym jest dany rejestr i skad pochodzi,
+ *   - LISTE PROBLEMOW z wyjasnieniem, co jest nie tak i jak to naprawic,
+ *   - OSTRZEZENIA ZALEZNE OD SPRZETU: jesli kod korzysta z odbioru przez
+ *     USART, a zworka JP4 jest rozwarta, edytor mowi o tym od razu.
+ *     Zaden kompilator tego nie zrobi, bo nie wie, jak ustawiona jest plytka.
+ */
+
+interface Props {
+  project: Project
+  activePath: string
+  onSelectFile: (path: string) => void
+  /**
+   * Komunikaty PRAWDZIWEGO kompilatora z ostatniego budowania.
+   * Pokazujemy je razem z wlasna analiza, ale wyraznie oznaczone - bo to one
+   * decyduja o tym, czy program w ogole powstanie.
+   */
+  compilerDiagnostics: CompilerDiagnostic[]
+}
+
+const SEVERITY_LABEL: Record<Diagnostic['severity'], string> = {
+  error: 'błąd',
+  warning: 'ostrzeżenie',
+  info: 'podpowiedź',
+}
+
+/**
+ * Problem razem z plikiem, ktorego dotyczy.
+ *
+ * Bledy z INNYCH plikow tez musza byc widoczne. Wczesniej lista pokazywala
+ * tylko otwarty plik, wiec blad w sterowniku klawiatury konczyl sie tak:
+ * pasek stanu mowil „kompilacja nie powiodla sie”, a lista problemow byla
+ * pusta i nie bylo jak dojsc, gdzie lezy przyczyna.
+ */
+interface Problem extends Diagnostic {
+  /** `null` = komunikat nie dotyczy konkretnego pliku (np. blad konsolidacji). */
+  path: string | null
+}
+
+/**
+ * Komunikaty kompilatora niosa sciezke z katalogu roboczego serwera.
+ * Porownujemy same nazwy plikow, bo tylko one maja sens po stronie edytora.
+ */
+function matchPath(reported: string | null, paths: string[]): string | null {
+  if (!reported) return null
+  const name = reported.replace(/\\/g, '/').split('/').pop()
+  return paths.find((path) => path === name) ?? null
+}
+
+export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics }: Props) {
+  const simulator = useSimulator()
+  useSimulatorEvents(['state'], 4)
+
+  /**
+   * Trzymamy tylko LISTE plikow, nie ich tresc.
+   *
+   * Gdyby edytor dostawal tresc przez `value`, kazde nacisniecie klawisza
+   * wracaloby do niego jako nowa wartosc i Monaco resetowaloby model razem
+   * z pozycja kursora. Dlatego tresc podajemy raz, przez `defaultValue`,
+   * a edytor prowadzi ja dalej sam.
+   */
+  const [files, setFiles] = useState<ProjectFile[]>(() => project.list())
+  /** Numer podmiany projektu - zmienia sie tylko przy wczytaniu przykladu. */
+  const [revision, setRevision] = useState(project.revision)
+  const [ownDiagnostics, setOwnDiagnostics] = useState<Diagnostic[]>([])
+  const [renaming, setRenaming] = useState<string | null>(null)
+  /** Czy w drzewie stoi otwarty wiersz na nazwe nowego pliku. */
+  const [creating, setCreating] = useState(false)
+  const newNameRef = useRef<HTMLInputElement>(null)
+  const [shortcutsOpen, setShortcutsOpen] = useState(true)
+  const [message, setMessage] = useState<string | null>(null)
+
+  // Komunikat o operacji na plikach znika sam - inaczej wisi do konca sesji
+  // i po chwili nie wiadomo, czego dotyczyl.
+  useEffect(() => {
+    if (!message) return
+    const handle = setTimeout(() => setMessage(null), 8000)
+    return () => clearTimeout(handle)
+  }, [message])
+
+  /**
+   * Wysokosc listy problemow. `null` = dopasowana do tresci.
+   *
+   * Przy kilkunastu komunikatach lista sciskala sie do trzech wierszy, a nad nia
+   * zostawal pusty edytor. Uchwyt pozwala ja rozciagnac i przeczytac wszystko
+   * bez przewijania.
+   */
+  const [problemsHeight, setProblemsHeight] = useState<number | null>(null)
+  const resizing = useRef(false)
+  const paneRef = useRef<HTMLDivElement>(null)
+
+  /** Problem, do ktorego trzeba przewinac zaraz po otwarciu innego pliku. */
+  const pendingJump = useRef<Problem | null>(null)
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
+  const monacoRef = useRef<typeof Monaco | null>(null)
+  const uploadRef = useRef<HTMLInputElement>(null)
+
+  useEffect(
+    () =>
+      project.subscribe(() => {
+        const next = project.list()
+        // Odswiezamy liste tylko wtedy, gdy zmienil sie zestaw plikow.
+        setFiles((previous) => {
+          const samePaths =
+            previous.length === next.length &&
+            previous.every((file, index) => file.path === next[index].path)
+          return samePaths ? previous : next
+        })
+        // Ta sama wartosc nie wywoluje przerysowania, wiec mozemy ustawiac ja
+        // przy kazdej zmianie - takze przy zwyklym pisaniu w edytorze.
+        setRevision(project.revision)
+      }),
+    [project],
+  )
+
+  const active = useMemo(
+    () => files.find((file) => file.path === activePath) ?? files[0],
+    [files, activePath],
+  )
+
+  /** Tresc pobierana wprost z magazynu - zawsze aktualna, bez posrednictwa stanu. */
+  const initialContent = active ? (project.read(active.path)?.content ?? '') : ''
+
+  /**
+   * Kontekst sprzetowy dla analizy kodu. Bierzemy go z zywego modelu plytki,
+   * wiec ostrzezenia zmieniaja sie razem ze zworkami i fuse bitami.
+   */
+  const hardware = useMemo(
+    () => ({
+      clockHz: simulator.mcu.clockHz,
+      jtagEnabled: simulator.mcu.gpio.jtagEnabled,
+      jumpers: { ...simulator.board.jumpers },
+      wiring: describeWiring(simulator.board.wires),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      simulator.mcu.clockHz,
+      simulator.mcu.gpio.jtagEnabled,
+      simulator.board.jumpers.JP3,
+      simulator.board.jumpers.JP4,
+      simulator.board.jumpers.JP25,
+      // Przewody zmieniaja tresc ostrzezen tak samo jak zworki.
+      simulator.board.wires.length,
+    ],
+  )
+
+  /** Analiza kodu i przelozenie wynikow na podkreslenia w edytorze. */
+  const refreshDiagnostics = useCallback(
+    (code: string) => {
+      if (!active || languageOf(active.path) !== 'c') {
+        setOwnDiagnostics([])
+        return
+      }
+      /**
+       * Pozostale pliki projektu ida do analizy razem z otwartym.
+       * Sterownik klawiatury czy wyswietlacza siedzi zwykle w osobnym pliku,
+       * a bez niego analiza zglaszalaby "nigdzie nie ustawiasz DDRx"
+       * dla kodu, ktory ustawia to poprawnie - tylko gdzie indziej.
+       */
+      const otherSources = project
+        .list()
+        .filter((file) => file.path !== active.path && languageOf(file.path) === 'c')
+        .map((file) => file.content)
+        .join('\n')
+
+      const found = analyse(code, hardware, otherSources)
+      setOwnDiagnostics(found)
+
+      const monaco = monacoRef.current
+      const editor = editorRef.current
+      const model = editor?.getModel()
+      if (!monaco || !model) return
+
+      monaco.editor.setModelMarkers(
+        model,
+        'zl3avr',
+        found.map((item) => ({
+          startLineNumber: item.line,
+          endLineNumber: item.line,
+          startColumn: item.column,
+          endColumn: item.endColumn,
+          message: item.hint ? `${item.message}\n\n${item.hint}` : item.message,
+          source: item.source,
+          severity:
+            item.severity === 'error'
+              ? monaco.MarkerSeverity.Error
+              : item.severity === 'warning'
+                ? monaco.MarkerSeverity.Warning
+                : monaco.MarkerSeverity.Info,
+        })),
+      )
+    },
+    [active, hardware, project],
+  )
+
+  useEffect(() => {
+    if (active) refreshDiagnostics(project.read(active.path)?.content ?? '')
+  }, [active, project, refreshDiagnostics])
+
+  const handleMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor
+    monacoRef.current = monaco
+    if (active) refreshDiagnostics(project.read(active.path)?.content ?? '')
+
+    const jump = pendingJump.current
+    if (jump && jump.path === active?.path) {
+      pendingJump.current = null
+      editor.revealLineInCenter(jump.line)
+      editor.setPosition({ lineNumber: jump.line, column: jump.column })
+      editor.focus()
+    }
+  }
+
+  /**
+   * Podmiana calego projektu (wczytanie gotowego przykladu) musi trafic
+   * do OTWARTEGO edytora.
+   *
+   * Gdy nowy plik nazywa sie tak samo jak poprzedni, edytor trzyma swoj stary
+   * dokument i pokazuje kod, ktorego juz nie ma w projekcie. Student buduje
+   * wtedy co innego, niz widzi na ekranie - a to najbardziej mylacy blad,
+   * jaki moze zrobic narzedzie.
+   *
+   * Sprawdzenie sciezki dokumentu jest konieczne: przy przelaczaniu plikow
+   * efekt potrafi wyprzedzic podmiane dokumentu w edytorze, a wtedy bez tego
+   * warunku wpisalibysmy tresc jednego pliku do drugiego.
+   */
+  useEffect(() => {
+    const model = editorRef.current?.getModel()
+    if (!model || !active) return
+    const path = model.uri.path.replace(/^\//, '')
+    if (path !== active.path) return
+    const content = project.read(active.path)?.content ?? ''
+    if (model.getValue() !== content) {
+      model.setValue(content)
+      refreshDiagnostics(content)
+    }
+  }, [revision, active, project, refreshDiagnostics])
+
+  const handleChange = (value: string | undefined) => {
+    if (!active) return
+    const content = value ?? ''
+    project.write(active.path, content)
+    refreshDiagnostics(content)
+  }
+
+  // ---------------------------------------------------------------- pliki
+
+  /**
+   * Nowy plik: nazwe wpisuje sie WPROST W DRZEWIE, a nie w okienku systemowym.
+   *
+   * `window.prompt` bywa cicho blokowany - Chrome po kilku okienkach proponuje
+   * „nie pokazuj wiecej okien z tej strony", a raz zaznaczone zostaje na stale
+   * i wtedy przycisk wyglada na martwy: klikasz i nie dzieje sie nic, bez
+   * jakiegokolwiek komunikatu. Wpisywanie w miejscu nie zalezy od niczyjej zgody,
+   * dziala tak samo jak zmiana nazwy pliku obok i pokazuje blad tam, gdzie patrzysz.
+   */
+  const startCreating = () => {
+    setMessage(null)
+    setCreating(true)
+  }
+
+  /**
+   * Plik powstaje WYLACZNIE po nacisnieciu Entera.
+   *
+   * Zapisywanie przy utracie ogniska wyglada na wygodne, ale kazde przypadkowe
+   * przeniesienie uwagi - klikniecie w edytor, skrot klawiszowy, przelaczenie
+   * okna - tworzylo wtedy po cichu plik o nazwie domyslnej. Znikad brany
+   * „nowy.c" w drzewie jest gorszy niz koniecznosc wpisania nazwy drugi raz.
+   */
+  const finishCreating = (raw: string) => {
+    const name = raw.trim()
+    if (name === '') return
+    const problem = validateName(name, project.paths())
+    if (problem) {
+      // Wiersz zostaje otwarty z bledna nazwa - inaczej wpisana tresc przepadlaby
+      // razem z komunikatem, ktorego nie ma juz jak poprawic.
+      setMessage(problem)
+      return
+    }
+    project.create(name, Project.template(name))
+    onSelectFile(name)
+    setCreating(false)
+    setMessage(null)
+  }
+
+  const renameFile = (path: string, next: string) => {
+    setRenaming(null)
+    if (next === path) return
+    const problem = validateName(next, project.paths().filter((item) => item !== path))
+    if (problem) {
+      setMessage(problem)
+      return
+    }
+    project.rename(path, next.trim())
+    onSelectFile(next.trim())
+    setMessage(null)
+  }
+
+  const removeFile = (path: string) => {
+    if (!window.confirm(`Usunąć plik „${path}”? Tej operacji nie da się cofnąć.`)) return
+    project.remove(path)
+    const remaining = project.paths()
+    if (remaining.length > 0) onSelectFile(remaining[0])
+    setMessage(null)
+  }
+
+  const uploadFiles = async (list: FileList | null) => {
+    if (!list) return
+    let added = 0
+    const rejected: string[] = []
+    for (const file of Array.from(list)) {
+      // Nazwa z dysku tez musi przejsc kontrole - inaczej „sprawozdanie 2.c”
+      // wladowaloby sie do projektu i psulo kazde kolejne budowanie.
+      const problem = validateName(file.name, project.paths().filter((path) => path !== file.name))
+      if (problem && !problem.includes('już istnieje')) {
+        rejected.push(`${file.name} — ${problem}`)
+        continue
+      }
+      const content = await file.text()
+      const existing = project.read(file.name)
+      if (existing) {
+        if (!window.confirm(`Plik „${file.name}” już istnieje. Zastąpić jego zawartość?`)) continue
+        project.write(file.name, content)
+      } else {
+        project.create(file.name, content)
+      }
+      added++
+      onSelectFile(file.name)
+    }
+    setMessage(
+      rejected.length > 0
+        ? `Nie wczytano: ${rejected.join('; ')}`
+        : added > 0
+          ? `Wczytano plików: ${added}.`
+          : null,
+    )
+    if (uploadRef.current) uploadRef.current.value = ''
+  }
+
+  /**
+   * Skok do miejsca problemu. Jesli lezy w innym pliku, najpierw go otwieramy -
+   * inaczej klikniecie w blad z innego pliku nie robiloby nic i wygladalo
+   * na zepsuty interfejs.
+   */
+  const jumpTo = (problem: Problem) => {
+    if (problem.path && problem.path !== active?.path) {
+      pendingJump.current = problem
+      onSelectFile(problem.path)
+      return
+    }
+    const editor = editorRef.current
+    if (!editor) return
+    editor.revealLineInCenter(problem.line)
+    editor.setPosition({ lineNumber: problem.line, column: problem.column })
+    editor.focus()
+  }
+
+  /**
+   * Komunikaty kompilatora doklejamy na poczatek listy - sa wazniejsze niz nasze
+   * wlasne podpowiedzi, bo bez nich program w ogole nie powstanie. Pokazujemy
+   * WSZYSTKIE, takze te z innych plikow projektu, z etykieta pliku.
+   */
+  const compilerItems: Problem[] = useMemo(() => {
+    const paths = files.map((file) => file.path)
+    return compilerDiagnostics.map((item) => ({
+      path: matchPath(item.file, paths),
+      line: item.line,
+      column: item.column,
+      endColumn: item.column + 1,
+      severity: item.severity,
+      source: 'Kompilator' as const,
+      message: item.message,
+      hint: item.note,
+    }))
+  }, [compilerDiagnostics, files])
+
+  const diagnostics: Problem[] = useMemo(
+    () => [
+      ...compilerItems,
+      ...ownDiagnostics.map((item) => ({ ...item, path: active?.path ?? null })),
+    ],
+    [compilerItems, ownDiagnostics, active],
+  )
+
+  const errorCount = diagnostics.filter((item) => item.severity === 'error').length
+  const warningCount = diagnostics.filter((item) => item.severity === 'warning').length
+
+  /** Ile bledow kompilatora przypada na kazdy plik - znacznik w drzewie plikow. */
+  const errorsByFile = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const item of compilerItems) {
+      if (item.path && item.severity === 'error') {
+        counts.set(item.path, (counts.get(item.path) ?? 0) + 1)
+      }
+    }
+    return counts
+  }, [compilerItems])
+
+  return (
+    <div className="ide">
+      <div className="filetree">
+        <div className="filetree-toolbar">
+          <button onClick={startCreating} title="Nowy plik — nazwę wpiszesz w drzewie poniżej">
+            + Plik
+          </button>
+          <button onClick={() => uploadRef.current?.click()} title="Wczytaj pliki z dysku">
+            Wczytaj
+          </button>
+          <button onClick={() => downloadProject(project.list())} title="Pobierz cały projekt jako archiwum ZIP">
+            Pobierz
+          </button>
+          <input
+            ref={uploadRef}
+            type="file"
+            multiple
+            accept=".c,.h,.cpp,.hpp,.py,.txt"
+            style={{ display: 'none' }}
+            onChange={(event) => void uploadFiles(event.target.files)}
+          />
+        </div>
+
+        <div className="header">Pliki projektu</div>
+        {creating && (
+          <div className="item creating">
+            <span className="file-icon">+</span>
+            <input
+              ref={newNameRef}
+              autoFocus
+              defaultValue="nowy.c"
+              title="Wpisz nazwę i naciśnij Enter albo kliknij ✓. Escape anuluje."
+              // Nazwa domyslna od razu zaznaczona: bez tego kursor staje na jej
+              // koncu i pierwsza wpisana litera dokleja sie do „nowy.c”.
+              onFocus={(event) => event.target.select()}
+              onBlur={() => {
+                setCreating(false)
+                setMessage(null)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') finishCreating(event.currentTarget.value)
+                if (event.key === 'Escape') {
+                  setCreating(false)
+                  setMessage(null)
+                }
+              }}
+            />
+            {/*
+              Druga droga, myszą. Sam Enter to za waska umowa: jesli klawisz
+              z jakiegokolwiek powodu nie dojdzie do pola, uzytkownikowi zostaje
+              wrazenie, ze przycisk „+ Plik” nie dziala - a nie ma zadnego innego
+              sposobu, zeby dokonczyc.
+
+              `onMouseDown` z `preventDefault` jest tu konieczne: bez tego
+              nacisniecie przycisku najpierw zabiera ognisko polu, `onBlur`
+              zamyka wiersz, a klikniecie nie ma juz w co trafic.
+            */}
+            <button
+              className="creating-ok"
+              title="Utwórz plik"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => finishCreating(newNameRef.current?.value ?? '')}
+            >
+              ✓
+            </button>
+          </div>
+        )}
+        {files.map((file) => (
+          <div
+            key={file.path}
+            className={'item' + (file.path === active?.path ? ' active' : '')}
+            onClick={() => onSelectFile(file.path)}
+          >
+            {renaming === file.path ? (
+              <input
+                autoFocus
+                defaultValue={file.path}
+                onBlur={(event) => renameFile(file.path, event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+                  if (event.key === 'Escape') setRenaming(null)
+                }}
+                onClick={(event) => event.stopPropagation()}
+              />
+            ) : (
+              <>
+                <span className="file-icon">{languageOf(file.path) === 'c' ? 'C' : languageOf(file.path) === 'python' ? 'PY' : '≡'}</span>
+                <span className="file-name">{file.path}</span>
+                {errorsByFile.has(file.path) && (
+                  <span className="file-errors" title={`Błędów kompilacji w tym pliku: ${errorsByFile.get(file.path)}`}>
+                    {errorsByFile.get(file.path)}
+                  </span>
+                )}
+                <span className="file-actions">
+                  <button
+                    title="Zmień nazwę"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setRenaming(file.path)
+                    }}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    title="Pobierz ten plik"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      downloadFile(file.path, file.content)
+                    }}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    title="Usuń"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      removeFile(file.path)
+                    }}
+                  >
+                    ✕
+                  </button>
+                </span>
+              </>
+            )}
+          </div>
+        ))}
+
+        {message && <div className="filetree-message">{message}</div>}
+
+        <div className="shortcuts">
+          <button
+            className="section-toggle"
+            onClick={() => setShortcutsOpen((open) => !open)}
+            title={shortcutsOpen ? 'Zwiń' : 'Rozwiń'}
+          >
+            <span className="toggle-sign">{shortcutsOpen ? '−' : '+'}</span>
+            Skróty klawiszowe
+          </button>
+
+          {shortcutsOpen && (
+            <>
+              <dl>
+                <dt>Ctrl + Spacja</dt><dd>podpowiedzi</dd>
+                <dt>Ctrl + F / H</dt><dd>szukaj / zamień</dd>
+                <dt>Ctrl + /</dt><dd>zakomentuj linię</dd>
+                <dt>Alt + ↑ / ↓</dt><dd>przenieś linię</dd>
+                <dt>Shift+Alt+↓</dt><dd>powiel linię</dd>
+                <dt>Ctrl + D</dt><dd>zaznacz kolejne wystąpienie</dd>
+                <dt>Ctrl + Z / Y</dt><dd>cofnij / ponów</dd>
+                <dt>F7</dt><dd>zbuduj i wgraj</dd>
+                <dt>F5</dt><dd>pauza / wznów</dd>
+              </dl>
+              <p className="shortcuts-note">
+                Najedź kursorem na nazwę rejestru albo bitu, żeby zobaczyć, czym jest i po co służy.
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="editor-pane" ref={paneRef}>
+        <div className="editor-tabs">
+          <div className="tab active">{active?.path ?? '—'}</div>
+        </div>
+
+        {active && (
+          <Editor
+            key={active.path}
+            theme="vs-dark"
+            path={active.path}
+            language={languageOf(active.path)}
+            defaultValue={initialContent}
+            onMount={handleMount}
+            onChange={handleChange}
+            options={{
+              fontFamily: "Consolas, 'Courier New', monospace",
+              fontSize: 14,
+              minimap: { enabled: true },
+              tabSize: 4,
+              renderWhitespace: 'selection',
+              automaticLayout: true,
+              scrollBeyondLastLine: false,
+              quickSuggestions: { other: true, comments: false, strings: false },
+              suggestOnTriggerCharacters: true,
+              bracketPairColorization: { enabled: true },
+              padding: { top: 10 },
+            }}
+          />
+        )}
+
+        <div
+          className="problems"
+          style={problemsHeight ? { height: problemsHeight, maxHeight: 'none' } : undefined}
+        >
+          <div
+            className="problems-resizer"
+            title="Przeciągnij, żeby zmienić wysokość listy problemów"
+            onPointerDown={(event) => {
+              resizing.current = true
+              event.currentTarget.setPointerCapture(event.pointerId)
+            }}
+            onPointerMove={(event) => {
+              if (!resizing.current) return
+              const pane = paneRef.current
+              if (!pane) return
+              const rect = pane.getBoundingClientRect()
+              const height = rect.bottom - event.clientY
+              setProblemsHeight(Math.max(90, Math.min(rect.height - 140, height)))
+            }}
+            onPointerUp={(event) => {
+              resizing.current = false
+              event.currentTarget.releasePointerCapture(event.pointerId)
+            }}
+            onDoubleClick={() => setProblemsHeight(null)}
+          />
+          <div className="problems-header">
+            <strong>Problemy</strong>
+            {errorCount > 0 && <span className="badge error">{errorCount} błędów</span>}
+            {warningCount > 0 && <span className="badge warning">{warningCount} ostrzeżeń</span>}
+            {diagnostics.length === 0 && <span className="badge ok">nic nie znaleziono</span>}
+            <span className="spacer" />
+            {/*
+              Kompilator bywa dwojaki - serwerowy avr-gcc albo clang w przegladarce -
+              wiec nie wskazujemy tu ktoregos z nich po nazwie. Ktory pracuje, mowi
+              pasek stanu; tutaj wazne jest tylko, skad bierze sie ktora czesc listy.
+            */}
+            <span className="problems-hint">
+              Komunikaty oznaczone „Kompilator” pochodzą wprost z kompilatora. Pozostałe to
+              analiza uwzględniająca stan płytki: przewody, zworki i fuse bity.
+            </span>
+          </div>
+
+          <div className="problems-list">
+            {diagnostics.length === 0 && (
+              <p className="problems-empty">
+                Nie znaleziono typowych błędów. To nie zastępuje kompilacji — sprawdzane są
+                najczęstsze potknięcia składniowe, błędy w obsłudze rejestrów oraz zgodność
+                programu z aktualnym ustawieniem płytki.
+              </p>
+            )}
+            {diagnostics.map((item, index) => (
+              <div key={index} className={`problem ${item.severity}`} onClick={() => jumpTo(item)}>
+                <span className="problem-place">
+                  {item.path && item.path !== active?.path ? `${item.path}, ` : ''}linia {item.line}
+                </span>
+                <span
+                  className={
+                    'problem-source source-' +
+                    (item.source === 'Płytka' ? 'board' : item.source === 'Kompilator' ? 'compiler' : item.source.toLowerCase())
+                  }
+                >
+                  {item.source}
+                </span>
+                <div className="problem-text">
+                  <div className="problem-message">
+                    <span className="problem-severity">{SEVERITY_LABEL[item.severity]}:</span> {item.message}
+                  </div>
+                  {item.hint && <div className="problem-hint">{item.hint}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

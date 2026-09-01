@@ -1,0 +1,95 @@
+ZL3AVR Emulator
+===============
+
+Ten plik opisuje DWIE różne rzeczy, bo repozytorium zawiera dwa rodzaje treści:
+kod napisany przez autora narzędzia oraz kilkanaście krótkich programów
+pochodzących z zajęć laboratoryjnych. Nie da się objąć jedną licencją obu,
+bo licencji udziela się do tego, co się samemu napisało.
+
+
+1. NARZĘDZIE — licencja MIT
+---------------------------
+
+Dotyczy całego repozytorium Z WYJĄTKIEM plików wymienionych w punkcie 2:
+symulatora ATmega32, modelu płytki, interfejsu, edytora, kompilatora
+w przeglądarce, warstwy „komputera PC", testów, skryptów budowania
+i dokumentacji.
+
+Copyright (c) 2026 Autor projektu ZL3AVR Emulator
+
+Niniejszym udziela się nieodpłatnego zezwolenia każdej osobie, która wejdzie
+w posiadanie kopii tego oprogramowania i powiązanych plików dokumentacji
+(dalej „Oprogramowanie"), na nieograniczone korzystanie z Oprogramowania,
+w tym bez ograniczeń na prawo do używania, kopiowania, modyfikowania, łączenia,
+publikowania, rozpowszechniania, udzielania sublicencji i/lub sprzedaży kopii
+Oprogramowania, a także zezwalanie na to osobom, którym Oprogramowanie
+dostarczono, pod następującymi warunkami:
+
+Powyższa nota o prawach autorskich oraz niniejsza nota o zezwoleniu mają zostać
+zawarte we wszystkich kopiach lub istotnych częściach Oprogramowania.
+
+OPROGRAMOWANIE JEST DOSTARCZANE „TAKIM, JAKIE JEST", BEZ JAKIEJKOLWIEK
+GWARANCJI, WYRAŹNEJ LUB DOROZUMIANEJ, W TYM BEZ GWARANCJI PRZYDATNOŚCI
+HANDLOWEJ, PRZYDATNOŚCI DO OKREŚLONEGO CELU I NIENARUSZANIA PRAW. W ŻADNYM
+WYPADKU AUTORZY LUB POSIADACZE PRAW AUTORSKICH NIE PONOSZĄ ODPOWIEDZIALNOŚCI
+ZA JAKIEKOLWIEK ROSZCZENIA, SZKODY LUB INNE ZOBOWIĄZANIA, ZARÓWNO W RAMACH
+DZIAŁANIA UMOWY, DELIKTU, JAK I INNYCH, WYNIKAJĄCE Z OPROGRAMOWANIA, JEGO
+UŻYCIA LUB INNYCH DZIAŁAŃ Z NIM ZWIĄZANYCH, LUB Z NIMI POWIĄZANE.
+
+--- English version of the same permission (the wording above is a translation) ---
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+2. PRZYKŁADY Z LABORATORIUM — poza licencją MIT
+-----------------------------------------------
+
+Dotyczy plików:
+
+    apps/web/src/examples/src/**      programy ćwiczeniowe i skrypt „komputera PC"
+    apps/web/src/examples/hex/**      te same programy skompilowane
+    tests/golden/**                   wyniki odniesienia zbudowane z tych programów
+    ZASOBY/SYSTEMY_WBUDOWANE_AVR/**   projekty z drugiego przedmiotu
+
+To rozwiązania zadań laboratoryjnych napisane przez autora narzędzia, ale
+powstałe według instrukcji prowadzących zajęcia na Politechnice Lubelskiej
+(Wydział Elektrotechniki i Informatyki) i często na dostarczonych przez nich
+szkieletach kodu. Fragmenty tych plików — struktura zadania, szablony funkcji,
+format ramek, dobór nazw — mogą więc pochodzić od prowadzących, a prawa do nich
+należą do ich autorów i do uczelni.
+
+Autor narzędzia NIE udziela do tych plików żadnej licencji, bo nie jest ich
+wyłącznym twórcą. Znalazły się w repozytorium wyłącznie jako materiał
+demonstracyjny: bez działającego programu emulator płytki nie ma czego pokazać.
+Zakres jest możliwie wąski, a dane osobowe zostały z nich usunięte.
+
+Jeżeli chcesz użyć tych plików do czegokolwiek poza uruchomieniem ich w tym
+narzędziu, ustal warunki z ich autorami.
+
+Skany instrukcji laboratoryjnych, sylabus przedmiotu i dokumentacja producentów
+sprzętu NIE są częścią tego repozytorium i nie są rozpowszechniane.
+
+
+3. Zgłoszenia
+-------------
+
+Jeżeli ktokolwiek uprawniony — prowadzący zajęcia, uczelnia albo producent
+sprzętu — uzna, że coś w tym repozytorium narusza jego prawa albo nie powinno
+tu być publikowane, wystarczy zgłoszenie przez „Issues" w repozytorium. Sporny
+materiał zostanie niezwłocznie usunięty, bez konieczności uzasadniania.

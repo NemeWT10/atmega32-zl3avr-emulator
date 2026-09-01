@@ -1,0 +1,28 @@
+{
+  "name": "zl3avr-emulator",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Emulator zestawu ewaluacyjnego ZL3AVR z mikrokontrolerem ATmega32",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "predev": "node tools/copy-pyodide.mjs",
+    "dev": "node tools/dev.mjs",
+    "prebuild": "node tools/copy-pyodide.mjs",
+    "build": "npm run build --workspace @zl3avr/web",
+    "preview": "npm run preview --workspace @zl3avr/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --build --force",
+    "dev:web": "npm run dev --workspace @zl3avr/web",
+    "kompilator": "node tools/compile-server/server.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

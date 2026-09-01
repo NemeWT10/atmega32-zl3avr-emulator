@@ -1,0 +1,39 @@
+# Poprawka bledu w linkerze lld dotyczaca skokow warunkowych na AVR.
+#
+# OBJAW: program, w ktorym petla albo `if` ma cialo dluzsze niz ~64 bajty,
+# nie daje sie zlinkowac:
+#
+#   relocation R_AVR_7_PCREL out of range: -66 is not in [-64, 63]
+#
+# PRZYCZYNA: rozkazy skoku warunkowego AVR (`brne`, `breq`, ...) mieszcza
+# 7-bitowa odleglosc liczona w SLOWACH, czyli +-64 slowa = +-128 bajtow.
+# lld liczy te odleglosc w bajtach, ale sprawdza ja wzgledem zakresu slow -
+# i odrzuca poprawne skoki dwa razy za wczesnie. Widac to w tym samym fragmencie
+# kodu: sprawdzenie dostaje `val - 2`, a do rozkazu wpisywane jest `(val - 2) >> 1`.
+#
+# Przesuniecie musi isc PO RZUTOWANIU NA LICZBE ZE ZNAKIEM. `val` jest bez znaku,
+# wiec skok w tyl to ogromna liczba dodatnia i `>> 1` wsuwa w nia zero zamiast bitu
+# znaku; bez rzutowania kazdy skok wstecz „oddala sie” o dziewiec trylionow.
+# (Oryginal dziala dla wartosci ujemnych, bo `checkInt` sam rzutuje na int64_t.)
+#
+# To blad LLVM-a, nie naszego kodu, i dotyka niemal kazdego programu dluzszego
+# od kilkunastu linii - dlatego poprawiamy go u siebie zamiast omijac. Ta sama
+# pomylka jest w skoku `rjmp` (13 bitow, +-4 kB), wiec poprawiamy oba.
+#
+# Budowa jest PRZYROSTOWA: bierzemy gotowy obraz z pelna kompilacja LLVM-a,
+# zmieniamy jeden plik i uruchamiamy `ninja` ponownie. Przebudowuje sie sam lld,
+# a nie caly projekt - minuty zamiast godzin.
+
+FROM zl3avr-wasm-toolchain-base
+
+RUN set -e; \
+    f=/work/llvm-project/lld/ELF/Arch/AVR.cpp; \
+    grep -q 'checkInt(loc, val - 2, 7, rel);'  "$f" || { echo "brak spodziewanej linii (7 bit)";  exit 1; }; \
+    grep -q 'checkInt(loc, val - 2, 13, rel);' "$f" || { echo "brak spodziewanej linii (13 bit)"; exit 1; }; \
+    sed -i 's/checkInt(loc, val - 2, 7, rel);/checkInt(loc, static_cast<int64_t>(val - 2) >> 1, 7, rel);/' "$f"; \
+    sed -i 's/checkInt(loc, val - 2, 13, rel);/checkInt(loc, static_cast<int64_t>(val - 2) >> 1, 13, rel);/' "$f"; \
+    grep -n 'static_cast<int64_t>(val - 2) >> 1' "$f"
+
+RUN ninja -C /work/build-wasm lld
+
+CMD ["bash"]

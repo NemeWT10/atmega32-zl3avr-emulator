@@ -1,0 +1,80 @@
+node_modules/
+dist/
+dist-ssr/
+.vite/
+coverage/
+*.local
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# artefakty budowy toolchaina (duze, budowane osobno)
+toolchain-build/
+*.wasm.br
+
+# wyniki kompilacji uzytkownika (tylko katalogi robocze —
+# NIE globalnie *.o/*.a, bo prekompilowane avr-libc trafi do repo)
+build/
+out/
+
+# pliki robocze do debugowania
+tools/scratch/
+
+# --- materialy zrodlowe nie ida do publicznego repozytorium ---
+# ZASOBY/ to skanowane instrukcje laboratoryjne, sylabus i dokumentacja
+# producenta plytki. Zawieraja dane osobowe (autorzy, prowadzacy) i sa
+# cudza wlasnoscia - nie wolno ich redystrybuowac. Trzymamy je lokalnie,
+# a do repozytorium trafiaja wylacznie opracowania wlasne.
+ZASOBY/
+
+# --- kompilator w przegladarce (SPIKE-1) ---
+# clang.wasm, lld.wasm i archiwa avr-libc to 62 MB artefaktow BUDOWY, nie zrodel.
+# Odtwarza je `bash tools/wasm-toolchain/extract.sh` z obrazow dockerowych;
+# przy publikacji strony trzeba je wygenerowac w kroku budowania.
+apps/web/public/toolchain/
+tools/wasm-toolchain/.sysroot/
+tools/wasm-toolchain/build.log
+
+# Srodowisko Pythona w przegladarce (Pyodide) - 13 MB paczki npm,
+# odtwarzane poleceniem `node tools/copy-pyodide.mjs` (robi to `npm run dev`).
+apps/web/public/pyodide/
+
+# --- notatnik roboczy asystenta ---
+# Zasady pracy, stan prac, rejestr decyzji i mapa plikow. Dokument dla ludzi
+# z zewnatrz to publiczne README.md; ten plik zostaje lokalnie.
+CENTRUM-DOWODZENIA.md
+
+# --- zrzuty tekstowe materialow zrodlowych ---
+# To PRZEPISANE NA TEKST cudze dokumenty: datasheet ATmega32 (Microchip),
+# HD44780 (Hitachi), dokumentacja plytki (BTC/Kamami), instrukcje laboratoryjne
+# i sylabus. Wykluczenie samego PDF-a przy opublikowaniu jego pelnego przepisu
+# byloby rozroznieniem bez roznicy - to ta sama tresc. Zostaja lokalnie, bo sa
+# zrodlem prawdy przy pracy nad modelem sprzetu (ZASADA #2).
+docs/zrodla-txt/
+
+# --- strony dokumentacji producenta jako obrazy ---
+# To renderowane strony PDF-a z dokumentacja plytki (BTC/Kamami) - czyli
+# dokladnie skany, ktorych nie publikujemy. 4,9 MB cudzej wlasnosci.
+# Zostaja lokalnie, bo schemat elektryczny jest zrodlem prawdy o plytce.
+docs/plytka-img/
+
+# --- listingi golden testow ---
+# `avr-objdump -d -S` wplata w listing KOD ZRODLOWY, z ktorego powstal, wiec plik
+# .lst niesie cala tresc programu z ZASOBY/. Testy uzywaja wylacznie .hex
+# (sam kod maszynowy), a listingi sluzyly do recznego zagladania przy pisaniu
+# rdzenia - i do tego wystarcza lokalnie.
+tests/golden/*.lst
+tests/golden/*.map
+
+# --- dokumentacja robocza ---
+# Kanoniczna referencja plytki, mapa wymagan i wyniki rozpoznan technicznych.
+# To opracowania wlasne, ale powstale z cudzych dokumentow i pelne przepisanych
+# z nich map rejestrow, wyprowadzen i parametrow. Na GitHubie ma byc README
+# i aplikacja - nic wiecej. Zostaja lokalnie, bo sa zrodlem prawdy przy pracy.
+docs/
+
+# Instrukcja startowa asystenta - narzedzie pracy, nie czesc aplikacji.
+CLAUDE.md
+.claude/
