@@ -109,13 +109,25 @@ wyłącznie jako oznaczone przykłady — nigdy jako definicja tego, do czego da
 
 **Płytka ZL3AVR odwzorowana z dokumentacji producenta**
 - rozmieszczenie elementów i proporcje wzięte z rysunków w dokumentacji producenta
-- przewody prowadzone przeciągnięciem z pinu na pin, z **fizyką** (symulacja Verleta) i stałą długością żyły
-- żyła trzymana w ręku ma **kolor i kształt gotowego przewodu**: po puszczeniu przycisku
-  połączenie zaczyna dokładnie tam, gdzie skończył podgląd — bez przeskoku
-- przyciąganie do najbliższego pinu, podświetlenie celu, blaknięcie pozostałych przewodów
-  na czas przeciągania; **Escape** przerywa prowadzenie żyły
-- nietrafiony pin i próba połączenia już połączonych szpilek **mówią o tym wprost** —
-  bez tego oba przypadki wyglądają identycznie: nic się nie stało
+- przewody prowadzone **dwoma kliknięciami**: kliknięcie szpilki podnosi żyłę, kliknięcie
+  drugiej — łączy; między kliknięciami można przybliżać i przesuwać rysunek
+  (przeciągnięcie z pinu na pin też działa)
+- z przewodem w ręku **płytka się przygasza**, wolne szpilki dostają obrączki, a nad
+  rysunkiem stoi pasek z informacją, skąd żyła wychodzi; **Escape** albo kliknięcie
+  w tło odkłada przewód
+- zbliżenie do drugiej szpilki pokazuje **dokładnie tę żyłę, która powstanie** — podgląd
+  i gotowe połączenie liczy ta sama funkcja, więc nie mogą się różnić
+- kształt każdej żyły jest **wyliczany, nie symulowany**: ten sam układ połączeń wygląda
+  zawsze identycznie, a warstwa przewodów nie zużywa mocy, gdy nic się nie dzieje —
+  działa płynnie także na starszych komputerach
+- świeżo połączona żyła **dorysowuje się od szpilki do szpilki** — widać, że wtyk wszedł
+  dokładnie tam, gdzie pokazywał podgląd
+- przyciąganie do najbliższego pinu wybacza niecelne kliknięcie; próba połączenia już
+  połączonych szpilek **mówi o tym wprost** — bez tego wyglądałaby identycznie
+  jak „nic się nie stało"
+- **wiązka przewodów**: Shift + zaznaczenie prostokątne podnosi kilka szpilek naraz,
+  a jedno kliknięcie wpina je w kolejne linie złącza — jak taśmę wielożyłową
+- ikona **„?”** przy płytce z podręczną ściągą i krótkim **animowanym pokazem** łączenia
 - zworki JP3, JP4, JP25 klikane jak na sprzęcie; JP27 zajęte na stałe przez osadzony wyświetlacz
 - peryferia: 8 diod, klawiatura 4×4, cztery cyfry 7-segmentowe z multipleksem i „duchem",
   wyświetlacz alfanumeryczny 2×16 z pamięcią własnych znaków
@@ -162,6 +174,11 @@ wyłącznie jako oznaczone przykłady — nigdy jako definicja tego, do czego da
 - podgląd zajętości pamięci programu i RAM
 - można też wgrać gotowy plik `.hex` zbudowany gdzie indziej albo jeden z przykładów
 
+**Pusty projekt na start** — osobny przycisk w pasku u góry. Nie jest kolejnym ćwiczeniem
+do oglądania, tylko czystą kartką: w edytorze zostaje sam szkielet programu, przewody łączą
+port A z linijką diod, a wszystkie osiem diod zapala się od razu. Dzięki temu jeszcze przed
+napisaniem pierwszej linii widać, że połączenia działają.
+
 **Dwanaście gotowych przykładów** pogrupowanych według przedmiotu
 - osiem z „Techniki mikroprocesorowej": diody, klawiatura, wyświetlacz 7-segmentowy,
   timery, przerwania, USART, ramki binarne, wyświetlacz tekstowy
@@ -178,8 +195,16 @@ wyłącznie jako oznaczone przykłady — nigdy jako definicja tego, do czego da
   pobieranie pojedynczo i całego projektu jako archiwum ZIP
 - projekt zapamiętywany między sesjami w przeglądarce
 - podpowiedzi: rejestry, bity, makra, wektory przerwań, gotowe fragmenty kodu oraz funkcje
-  i zmienne z otwartego pliku (z numerem linii deklaracji)
+  i zmienne **z całego projektu** — także z innych plików, z nazwą pliku i numerem linii
 - dymki z opisem symbolu: czym jest, skąd pochodzi, przykład użycia, pułapka
+- dymek dostaje też **argument funkcji** — mówi, do której funkcji należy i czym w ogóle
+  jest argument; wcześniej najechanie na niego nie pokazywało niczego
+- **przejście do definicji** własnej funkcji, zmiennej albo stałej: Ctrl + kliknięcie
+  przenosi do miejsca, w którym ją zadeklarowano, **także w innym pliku projektu**,
+  a przycisk „← wróć" (Alt + ←) wraca tam, skąd nastąpił skok
+- przełącznik **„Bez komentarzy"** pokazuje ten sam kod bez komentarzy, z przyciskiem
+  kopiowania — do przeniesienia do Microchip Studio albo do sprawozdania. Plik zostaje
+  nietknięty, a podgląd jest tylko do odczytu, więc nie da się przez pomyłkę skasować opisów
 
 **Analiza kodu w trzech warstwach** (unikatowa część narzędzia)
 - *C* — niedomknięte nawiasy, brak średnika, przypisanie zamiast porównania, pusta instrukcja po `if`
@@ -258,6 +283,8 @@ Program ma pięć zakładek (plus ten poradnik):
    ustawia **wszystko naraz**: kod źródłowy w edytorze, gotowy program w mikrokontrolerze,
    przewody na płytce oraz fuse bity (czyli zegar). To jedyne miejsce, w którym wczytuje
    się ćwiczenie — dzięki temu kod i połączenia zawsze do siebie pasują.
+   Jeśli wolisz zacząć od siebie, naciśnij **„Pusty projekt"** obok tej listy: dostaniesz
+   czystą kartkę z portem A połączonym z diodami i wszystkimi ośmioma zapalonymi.
 2. Przejdź na zakładkę **Płytka** i zobacz, co się dzieje.
 3. Zmień coś w kodzie i naciśnij **„Zbuduj i wgraj" (F7)**. Kompilacja i wgranie programu
    są jednym poleceniem — nie da się przez pomyłkę oglądać starego programu.
@@ -266,22 +293,63 @@ Jeśli nic się nie dzieje, sprawdź po kolei trzy rzeczy: czy **zasilanie jest 
 (przycisk po prawej w górnym pasku), czy program w ogóle został wgrany, i czy w zakładce
 IDE nie czeka lista problemów z czerwonym licznikiem błędów.
 
+### Pisanie kodu w edytorze
+
+Zakładka **IDE** to nie samo pole tekstowe — sporo rzeczy odpowiada tam na pytania,
+zamiast kazać ich szukać w liczącym kilkaset stron datasheecie.
+
+- **Najedź kursorem na nazwę**, a dostaniesz opis. Rejestr albo bit (`UCSRC`, `OCIE1A`) —
+  czym jest, po co się go używa i na co uważać. Własna funkcja, zmienna albo argument —
+  jej deklaracja i plik, w którym powstała. To najszybszy sposób, żeby zrozumieć cudzy kod.
+- **Ctrl + kliknięcie** na własną nazwę przenosi do miejsca, w którym ją zadeklarowano —
+  także do innego pliku projektu. Przycisk **„← wróć"** (albo Alt + ←) wraca tam, skąd skok
+  nastąpił.
+- **Ctrl + spacja** rozwija podpowiedzi: rejestry, bity, wektory przerwań, gotowe fragmenty
+  kodu i wszystkie własne nazwy z projektu.
+- Przełącznik **„Bez komentarzy"** nad edytorem pokazuje ten sam kod z pominięciem
+  komentarzy i daje przycisk **„Kopiuj kod"** — do przeniesienia programu do Microchip
+  Studio albo do sprawozdania. To tylko podgląd: plik zostaje nietknięty, a komentarze
+  wracają po wyłączeniu przełącznika.
+- Lista **„Problemy"** pod edytorem zbiera komunikaty kompilatora ze wszystkich plików
+  i ostrzeżenia zależne od stanu płytki. Kliknięcie w problem przenosi do jego linii.
+
 ### Jak prowadzić przewody
 
 Peryferia na tej płytce **nie są na stałe połączone** z mikrokontrolerem. Wszystko jest
 wyprowadzone na szpilki (goldpiny) i to Ty decydujesz, co z czym połączyć — tak jak
 na zajęciach.
 
-1. Naciśnij i przytrzymaj pin, z którego chcesz poprowadzić żyłę.
-2. Przeciągnij w stronę drugiego pinu. Nie musisz celować dokładnie — najbliższy pin
-   **podświetli się na zielono** i to do niego trafi wtyk.
-3. Puść przycisk myszy.
+1. **Kliknij szpilkę**, z której chcesz poprowadzić żyłę. Płytka się przygasi, wolne
+   szpilki dostaną obrączki, a nad rysunkiem stanie pasek z informacją, co prowadzisz.
+2. **Kliknij drugą szpilkę.** Nie musisz celować idealnie — najbliższa szpilka
+   **podświetli się na zielono**, a podgląd pokaże dokładnie tę żyłę, która zaraz
+   powstanie. Po kliknięciu żyła dorysuje się od szpilki do szpilki.
 
+Między kliknięciami możesz swobodnie **przybliżać i przesuwać** rysunek — wybierz
+źródło przy jednym powiększeniu, a cel przy innym. Jeśli wolisz stary sposób,
+przeciągnięcie z szpilki na szpilkę też działa.
+
+- **Esc** albo kliknięcie w puste miejsce odkłada prowadzony przewód.
 - Najechanie na gotowy przewód **przygasza pozostałe** i wypisuje, co z czym łączy.
 - **Kliknięcie żyły wypina ją.** Jeśli to była pomyłka, naciśnij **„Cofnij"**.
 - Przy gęsto oplecionym złączu włącz **„ukryj przewody"** — piny zostaną odsłonięte.
 - Najechanie na pin mówi, która to linia mikrokontrolera i **jaki jest na niej stan
   w tej chwili**: wysoki (1), niski (0) czy pływający (nikt jej nie steruje).
+- Ikona **„?”** w lewym dolnym rogu płytki trzyma podręczną ściągę z łączenia,
+  razem z krótkim animowanym pokazem.
+
+#### Wiązka przewodów — kilka żył jednym ruchem
+
+Całe złącze da się podpiąć tak, jak wchodzi taśma wielożyłowa:
+
+1. Przytrzymaj **Shift** i **zaznacz prostokątem** kilka szpilek (na przykład cały
+   port). Pasek nad płytką pokaże, ile żył prowadzisz.
+2. **Kliknij szpilkę, w którą ma wejść pierwsza żyła.** Każda następna zajmie kolejną
+   linię tego złącza w dół, w kolejności od najwyższej zaznaczonej szpilki.
+
+Podgląd przy celu pokazuje od razu wszystkie żyły wiązki. Jeśli od klikniętej szpilki
+w dół nie ma tylu linii, ile ma wiązka, płytka powie o tym wprost; połączenia, które
+już istnieją, są pomijane.
 
 ### Jak oglądać płytkę z bliska
 
@@ -310,8 +378,12 @@ pierwszy raz coś nadaje.
 Dwie rzeczy, które warto wiedzieć od razu:
 
 - **Płytka odzywa się zwykle dopiero w odpowiedzi na wysłany znak.** Wpisz go w pole
-  „Wyślij do płytki" na dole terminala i naciśnij Enter. Puste okno nie znaczy, że coś
-  jest zepsute.
+  „Wyślij do płytki" **nad** oknem terminala i naciśnij Enter. Puste okno nie znaczy,
+  że coś jest zepsute.
+- Nazwy ustawień w pasku u góry nie trzeba znać na pamięć — **najedź na nie kursorem**.
+  Przy „Prędkości terminala" znajdziesz wyjaśnienie, czym w ogóle jest prędkość transmisji
+  i dlaczego obie strony muszą mieć ustawioną tę samą, a przy każdej pozycji listy zdanie
+  o tym, kiedy tej akurat się używa.
 - **Klawiatura 4×4 na płytce nie wysyła nic do terminala.** Czyta ją program, a nie łącze
   szeregowe — i tylko wtedy, gdy sam ją odczytuje. To dwie zupełnie różne drogi.
 

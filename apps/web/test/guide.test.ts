@@ -64,8 +64,18 @@ describe('poradnik wycinany z README', () => {
     const guide = parseGuide(README, 'Poradnik')!
     const joined = JSON.stringify(guide.blocks)
     // Zdanie zlamane w README na dwie linie musi trafic do jednego bloku.
-    expect(joined).toContain('najbliższy pin')
+    expect(joined).toContain('tę żyłę, która zaraz powstanie')
     expect(joined).not.toContain('\\n')
+  })
+
+  it('srodtytul o wiazce jest naglowkiem, nie akapitem z kratkami', () => {
+    const guide = parseGuide(README, 'Poradnik')!
+    const subheadings = guide.blocks
+      .filter((block) => block.kind === 'subheading')
+      .map((block) => block.inline.map((token) => token.text).join(''))
+    expect(subheadings.some((text) => text.includes('Wiązka przewodów'))).toBe(true)
+    // Kratki naglowka nie moga przeciec do zadnego tekstu.
+    expect(JSON.stringify(guide.blocks)).not.toContain('####')
   })
 })
 

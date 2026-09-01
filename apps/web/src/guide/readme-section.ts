@@ -24,6 +24,8 @@ export type InlineToken =
 
 export type Block =
   | { kind: 'heading'; inline: InlineToken[] }
+  /** Srodtytul (`####`) - mniejszy naglowek wewnatrz rozdzialu. */
+  | { kind: 'subheading'; inline: InlineToken[] }
   | { kind: 'paragraph'; inline: InlineToken[] }
   /** Cala linia w kursywie - w poradniku sluzy do zdania wprowadzajacego. */
   | { kind: 'note'; inline: InlineToken[] }
@@ -78,6 +80,12 @@ function parseBlocks(lines: string[]): Block[] {
     const trimmed = line.trim()
 
     if (trimmed === '' || trimmed === '---') {
+      index++
+      continue
+    }
+
+    if (trimmed.startsWith('#### ')) {
+      blocks.push({ kind: 'subheading', inline: parseInline(trimmed.slice(5).trim()) })
       index++
       continue
     }

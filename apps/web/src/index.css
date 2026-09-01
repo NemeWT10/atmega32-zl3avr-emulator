@@ -158,6 +158,103 @@ button.primary { background: var(--accent); border-color: var(--accent); }
   cursor: pointer;
 }
 .editor-tabs .tab.active { background: var(--bg-active); color: var(--fg); }
+/* Pasek zakladek jest zarazem paskiem narzedzi edytora: po lewej nazwa pliku,
+   po prawej przelacznik podgladu i powrot ze skoku do definicji. */
+.editor-tabs { align-items: center; gap: 8px; padding-right: 10px; }
+.editor-tabs .spacer { flex: 1; }
+.editor-back { padding: 2px 10px; font-size: 12px; }
+
+/* ---------- przelacznik wl./wyl. ---------- */
+
+/* Zwykly kwadracik pola wyboru w pasku narzedzi jest praktycznie niewidoczny,
+   a razem z nim niewidoczna jest cala mozliwosc. Dlatego suwak, podpis stanu
+   („WŁ." / „WYŁ.") i wyrazna zmiana koloru po wlaczeniu. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-bar);
+  color: var(--fg-dim);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.switch:hover { border-color: var(--accent-hover); color: var(--fg); }
+/* Samo pole wyboru jest niewidoczne, ale ZOSTAJE w drzewie - dzieki temu
+   dziala klawiatura (Tab + spacja) i czytniki ekranu. */
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+.switch-track {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #4a4a4a;
+  transition: background 0.12s ease;
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d4d4d4;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.switch-text { font-size: 12px; }
+.switch-state {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #3a3a3a;
+  color: var(--fg-dim);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.switch.on { border-color: var(--ok); background: #16302b; color: var(--fg); }
+.switch.on .switch-track { background: var(--ok); border-color: var(--ok); }
+.switch.on .switch-knob { transform: translateX(16px); background: #10241f; }
+.switch.on .switch-state { background: var(--ok); color: #10241f; font-weight: 600; }
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 2px;
+}
+
+/* ---------- podglad kodu bez komentarzy ---------- */
+
+/* Pasek podgladu i edytor dziela komorke siatki: gdyby pasek byl osobnym
+   wierszem, zabralby wiersz `1fr` przeznaczony na edytor. */
+.editor-area {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+.editor-area.with-bar { grid-template-rows: auto minmax(0, 1fr); }
+
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 12px;
+  background: #16302b;
+  border-bottom: 1px solid var(--ok);
+  font-size: 12px;
+}
+.preview-bar strong { color: var(--ok); white-space: nowrap; }
+.preview-bar span { color: var(--fg-dim); }
+.preview-bar .spacer { flex: 1; }
+.preview-bar button { white-space: nowrap; }
 
 /* ---------- placeholdery ---------- */
 
@@ -312,6 +409,79 @@ select, input[type='text'], input:not([type]) {
   filter: url(#wire-blur);
 }
 .wire-layer { pointer-events: visiblePainted; }
+/* Lagodne przygasanie zamiast skoku - przy wskazaniu jednej zyly z wiazki. */
+.wire-layer > g { transition: opacity 0.14s ease; }
+.wire-stack { transition: opacity 0.18s ease; }
+
+/*
+  Prowadzenie przewodu: przygaszenie plytki i podswietlenie szpilek.
+  Wylacznie wlasnosci tanie dla przegladarki - jedna przezroczystosc
+  z przejsciem i jednorazowe animacje; zadnych filtrow, zadnej petli.
+*/
+.board-dim {
+  fill: #04070c;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+.board-dim.on { opacity: 0.45; }
+
+/* Obraczka wolnej szpilki - miejsce, w ktore da sie wpiac prowadzony przewod. */
+.pin-open {
+  fill: none;
+  stroke: #7dd3fc;
+  stroke-width: 2;
+  opacity: 0.5;
+}
+
+/* Linia od szpilki zrodlowej do kursora - przewod „idzie za reka”. */
+.wire-cursor-line {
+  stroke-width: 3.5;
+  stroke-dasharray: 10 8;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+/*
+  Jednorazowe dorysowanie swiezo polaczonej zyly, od zrodla do celu.
+  `pathLength={100}` w WireStrokes normalizuje dlugosc sciezki, wiec animacja
+  operuje stalymi wartosciami; 102 zamiast 100 daje zapas na zaokraglenia.
+*/
+.wire-draw .wire-visual path {
+  stroke-dasharray: 102;
+  stroke-dashoffset: 102;
+  animation: wire-draw 0.3s ease-out forwards;
+}
+@keyframes wire-draw {
+  to { stroke-dashoffset: 0; }
+}
+/* Wtyk na koncu docelowym wskakuje w chwili, gdy zyla do niego dobiega. */
+.wire-draw .wire-boot-target {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wire-pop 0.16s ease-out 0.2s both;
+}
+@keyframes wire-pop {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+/* Pierscien potwierdzenia rozchodzacy sie od szpilki docelowej. */
+.wire-arrive {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wire-arrive 0.5s ease-out 0.26s both;
+}
+@keyframes wire-arrive {
+  from { transform: scale(0.4); opacity: 0.9; }
+  to { transform: scale(2.4); opacity: 0; }
+}
+
+/* Prostokat zaznaczenia wiazki (Shift + przeciagniecie). */
+.board-marquee {
+  fill: rgba(125, 211, 252, 0.12);
+  stroke: #7dd3fc;
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
+}
 
 /* ---------- okno modalne (fuse) ---------- */
 
@@ -434,9 +604,10 @@ select, input[type='text'], input:not([type]) {
 
 /* ---------- terminal ---------- */
 
-/* `minmax(0, 1fr)` na oknie wydruku: bez tego jego tresc rozpycha siatke
-   i wiersz wysylania wyjezdza poza dolna krawedz panelu. */
-.terminal-view { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; height: 100%; }
+/* Kolejnosc wierszy: ustawienia, pasek predkosci, WIERSZ WYSYLANIA, okno wydruku.
+   `minmax(0, 1fr)` na oknie wydruku jest konieczne - bez tego jego tresc rozpycha
+   siatke i wypycha pozostale wiersze poza panel. */
+.terminal-view { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); height: 100%; }
 .terminal-toolbar {
   display: flex; align-items: center; gap: 16px;
   padding: 8px 12px;
@@ -471,7 +642,7 @@ select, input[type='text'], input:not([type]) {
 .terminal-input {
   padding: 8px 12px 10px;
   background: var(--bg-panel);
-  border-top: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
 }
 .terminal-input-label {
   display: block;
@@ -572,8 +743,10 @@ select, input[type='text'], input:not([type]) {
   font-weight: 600;
   pointer-events: none;
 }
+.snap-duplicate { fill: #f59e0b; }
 .occupied-note { fill: #f59e0b; }
-.board-svg.dragging { cursor: grabbing; }
+/* Z przewodem w reku caly rysunek celuje - kazde klikniecie cos znaczy. */
+.board-svg.wiring { cursor: crosshair; }
 
 /* ---------- IDE: drzewo plikow ---------- */
 
@@ -626,7 +799,25 @@ select, input[type='text'], input:not([type]) {
 }
 .shortcuts dt { color: var(--fg); font-family: Consolas, monospace; white-space: nowrap; }
 .shortcuts dd { margin: 0; color: var(--fg-dim); }
-.shortcuts-note { padding: 10px 12px 0; margin: 0; color: var(--fg-dim); font-size: 11.5px; line-height: 1.5; }
+/* Karta zachecajaca do najezdzania kursorem. Dymki sa najwieksza czescia
+   wiedzy w tym narzedziu, a jednoczesnie jedyna, ktora sama sie nie pokazuje. */
+.tip-card {
+  margin: 12px 12px 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 3px;
+  background: #2b2b21;
+  color: var(--fg-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.tip-card strong { display: block; margin-bottom: 5px; color: var(--warn); }
+.tip-card ul { margin: 0; padding-left: 16px; }
+.tip-card li { margin-bottom: 3px; }
+.tip-card b { color: var(--fg); font-weight: 600; }
+.tip-card code { font-family: Consolas, monospace; color: var(--fg); }
+.tip-card p { margin: 6px 0 0; }
 
 /* ---------- IDE: lista problemow ---------- */
 
@@ -982,6 +1173,250 @@ select, input[type='text'], input:not([type]) {
   white-space: nowrap;
   pointer-events: none;
   z-index: 5;
+}
+
+/*
+  Pasek stanu prowadzenia przewodu - stoi nad plytka, dopoki przewod jest
+  w reku. Zielony, nie ostrzegawczy: to opis trwajacej operacji, nie problem.
+  Kropka ma kolor zyly, ktora powstanie.
+*/
+.board-wiring-chip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 92%;
+  padding: 7px 14px;
+  border-radius: 16px;
+  background: #0d2b1c;
+  border: 1px solid #2f8f5b;
+  color: #d9f5e4;
+  font-size: 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 7;
+  white-space: nowrap;
+}
+.board-wiring-chip strong { color: #ffffff; }
+.wiring-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  flex: none;
+}
+.wiring-esc {
+  color: #9fd4b6;
+  font-size: 11px;
+  border-left: 1px solid #2f8f5b;
+  padding-left: 8px;
+}
+
+/*
+  Ikona „?” w lewym dolnym rogu plytki - sciaga z laczenia przewodow.
+  Dymek z zapetlonym pokazem istnieje tylko na czas najechania, wiec
+  jego animacja nie kosztuje nic, gdy nikt nie patrzy.
+*/
+.wiring-help {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 8;
+}
+.wiring-help-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid #3d5a48;
+  background: #12281c;
+  color: #7fd8a5;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: help;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+.wiring-help:hover .wiring-help-button,
+.wiring-help-button[aria-expanded='true'] {
+  background: #1b3a29;
+  color: #b8f0cf;
+  border-color: #2f8f5b;
+}
+.wiring-help-card {
+  position: absolute;
+  left: 0;
+  bottom: 38px;
+  width: 330px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #101014;
+  border: 1px solid #34343a;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+  font-size: 12px;
+  color: var(--fg);
+  z-index: 9;
+}
+.wiring-help-card .wdemo {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+.wiring-help-steps {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.wiring-help-notes {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 3px;
+  color: var(--fg-dim);
+  font-size: 11.5px;
+}
+
+/*
+  Pokaz laczenia: DWA AKTY na jednej osi czasu 10 s, wszystko w procentach.
+  Akt 1 (0-40%): pojedyncza zyla klik-klik. Akt 2 (42-88%): zaznaczenie
+  prostokatem trzech szpilek i wpiecie wiazki jednym kliknieciem.
+*/
+.wdemo-board { fill: #1f6f43; stroke: #0d3b25; stroke-width: 2; }
+.wdemo-pad { fill: #d9a441; stroke: #8a6420; stroke-width: 1; }
+.wdemo-dim { fill: #04070c; animation: wdemo-dim 10s linear infinite; }
+@keyframes wdemo-dim {
+  0%, 5% { opacity: 0; }
+  8%, 36% { opacity: 0.45; }
+  41%, 56% { opacity: 0; }
+  60%, 82% { opacity: 0.45; }
+  88%, 100% { opacity: 0; }
+}
+.wdemo-open,
+.wdemo-source,
+.wdemo-target { fill: none; animation: 10s linear infinite; }
+.wdemo-open { stroke: #7dd3fc; stroke-width: 1.6; }
+.wdemo-source { stroke: #dc2626; stroke-width: 2.4; }
+.wdemo-target { stroke: #22c55e; stroke-width: 2.4; }
+.wdemo-open-1 { animation-name: wdemo-act1-rings; }
+.wdemo-source-1 { animation-name: wdemo-act1-rings; }
+.wdemo-target-1 { animation-name: wdemo-act1-target; }
+.wdemo-open-2 { animation-name: wdemo-act2-rings; }
+.wdemo-source-2 { stroke: #e11d48; animation-name: wdemo-act2-rings; }
+.wdemo-target-2 { animation-name: wdemo-act2-target; }
+@keyframes wdemo-act1-rings {
+  0%, 7% { opacity: 0; }
+  10%, 36% { opacity: 0.85; }
+  41%, 100% { opacity: 0; }
+}
+@keyframes wdemo-act1-target {
+  0%, 26% { opacity: 0; }
+  29%, 35% { opacity: 0.9; }
+  39%, 100% { opacity: 0; }
+}
+@keyframes wdemo-act2-rings {
+  0%, 57% { opacity: 0; }
+  60%, 84% { opacity: 0.85; }
+  88%, 100% { opacity: 0; }
+}
+@keyframes wdemo-act2-target {
+  0%, 64% { opacity: 0; }
+  67%, 79% { opacity: 0.9; }
+  83%, 100% { opacity: 0; }
+}
+/* prostokat zaznaczenia - rosnie od gornego lewego rogu, jak przy przeciaganiu */
+.wdemo-marquee {
+  fill: rgba(125, 211, 252, 0.14);
+  stroke: #7dd3fc;
+  stroke-width: 1.6;
+  stroke-dasharray: 6 4;
+  transform-box: fill-box;
+  transform-origin: top left;
+  animation: wdemo-marquee 10s linear infinite;
+}
+@keyframes wdemo-marquee {
+  0%, 43% { transform: scale(0.02); opacity: 0; }
+  44% { transform: scale(0.05); opacity: 0.9; }
+  56%, 60% { transform: scale(1); opacity: 0.9; }
+  64%, 100% { transform: scale(1); opacity: 0; }
+}
+.wdemo-preview {
+  fill: none;
+  stroke-width: 3;
+  stroke-dasharray: 7 5;
+}
+.wdemo-preview-1 { stroke: #dc2626; animation: wdemo-preview-1 10s linear infinite; }
+.wdemo-preview-2 { animation: wdemo-preview-2 10s linear infinite; }
+@keyframes wdemo-preview-1 {
+  0%, 26% { opacity: 0; }
+  28%, 32% { opacity: 0.75; }
+  34%, 100% { opacity: 0; }
+}
+@keyframes wdemo-preview-2 {
+  0%, 64% { opacity: 0; }
+  66%, 71% { opacity: 0.7; }
+  73%, 100% { opacity: 0; }
+}
+.wdemo-wire {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 102;
+}
+.wdemo-wire-1 { stroke: #dc2626; animation: wdemo-wire-1 10s linear infinite; }
+.wdemo-wire-2 { animation: wdemo-wire-2 10s linear infinite; }
+.wdemo-strand-0 { stroke: #8b5a2b; }
+.wdemo-strand-1 { stroke: #e11d48; }
+.wdemo-strand-2 { stroke: #f97316; }
+@keyframes wdemo-wire-1 {
+  0%, 32% { stroke-dashoffset: 102; opacity: 1; }
+  40%, 90% { stroke-dashoffset: 0; opacity: 1; }
+  96%, 100% { stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes wdemo-wire-2 {
+  0%, 72% { stroke-dashoffset: 102; opacity: 1; }
+  80%, 90% { stroke-dashoffset: 0; opacity: 1; }
+  96%, 100% { stroke-dashoffset: 0; opacity: 0; }
+}
+.wdemo-click {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 2;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.wdemo-click-a { animation: wdemo-click-a 10s linear infinite; }
+.wdemo-click-b { animation: wdemo-click-b 10s linear infinite; }
+.wdemo-click-c { animation: wdemo-click-c 10s linear infinite; }
+@keyframes wdemo-click-a {
+  0%, 6% { opacity: 0; transform: scale(0.5); }
+  8% { opacity: 0.9; transform: scale(0.7); }
+  13%, 100% { opacity: 0; transform: scale(2.1); }
+}
+@keyframes wdemo-click-b {
+  0%, 30% { opacity: 0; transform: scale(0.5); }
+  32% { opacity: 0.9; transform: scale(0.7); }
+  37%, 100% { opacity: 0; transform: scale(2.1); }
+}
+@keyframes wdemo-click-c {
+  0%, 70% { opacity: 0; transform: scale(0.5); }
+  72% { opacity: 0.9; transform: scale(0.7); }
+  77%, 100% { opacity: 0; transform: scale(2.1); }
+}
+.wdemo-cursor path { fill: #f5f5f5; stroke: #16161a; stroke-width: 1.2; }
+.wdemo-cursor { animation: wdemo-cursor 10s ease-in-out infinite; }
+@keyframes wdemo-cursor {
+  0% { transform: translate(96px, 6px); }
+  7%, 11% { transform: translate(40px, 24px); }
+  27%, 31% { transform: translate(220px, 24px); }
+  40% { transform: translate(120px, 30px); }
+  44%, 45% { transform: translate(24px, 36px); }
+  56%, 58% { transform: translate(56px, 108px); }
+  68%, 72% { transform: translate(220px, 48px); }
+  100% { transform: translate(220px, 48px); }
 }
 
 /* Krotki komunikat o tym, co wlasnie sie stalo (wczytano polaczenia, cofnieto). */

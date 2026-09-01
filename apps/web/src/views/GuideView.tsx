@@ -58,6 +58,12 @@ function BlockView({ block }: { block: Block }) {
           <Inline tokens={block.inline} />
         </h2>
       )
+    case 'subheading':
+      return (
+        <h3>
+          <Inline tokens={block.inline} />
+        </h3>
+      )
     case 'note':
       return (
         <p className="guide-note">

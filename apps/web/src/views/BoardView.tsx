@@ -3,6 +3,7 @@ import type { Wire } from '@zl3avr/board'
 import { useSimulator, useSimulatorEvents } from '../sim/SimulationContext'
 import { BoardCanvas, type HoverInfo } from '../board-view/BoardCanvas'
 import { Minimap } from '../board-view/Minimap'
+import { WiringHelp } from '../board-view/WiringHelp'
 import { useKeyboardKeypad } from '../board-view/useKeyboardKeypad'
 import { getBox } from '../board-view/bounds'
 import { TerminalView } from './TerminalView'
@@ -72,6 +73,15 @@ export function BoardView() {
   /** Poprzedni uklad przewodow - jeden krok wstecz wystarcza do naprawy pomylki. */
   const [undo, setUndo] = useState<{ wires: Wire[]; label: string } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  /**
+   * Prowadzony wlasnie przewod (opis zrodla + kolor + liczba zyl) - przez caly
+   * czas prowadzenia nad plytka stoi pasek z ta informacja. Bez niego tryb
+   * "podniesionego przewodu" byłby stanem, ktorego nigdzie nie widac,
+   * a przygaszona plytka wygladalaby na usterke.
+   */
+  const [wiring, setWiring] = useState<{ label: string; colour: string; count: number } | null>(
+    null,
+  )
   /**
    * Podpowiedz o przesuwaniu i powiekszaniu pokazujemy tylko do pierwszego
    * uzycia. Potem znika na stale - kto raz przybliżyl, juz wie, jak to dziala,
@@ -300,6 +310,7 @@ export function BoardView() {
             onView={changeView}
             onBeforeWiringChange={rememberWires}
             onNotice={announce}
+            onWiringState={setWiring}
           />
 
           {!navHintSeen && (
@@ -309,6 +320,27 @@ export function BoardView() {
           )}
 
           {!isFullView(view) && <Minimap view={view} onView={changeView} />}
+
+          <WiringHelp />
+
+          {wiring && (
+            <div className="board-wiring-chip">
+              <span className="wiring-dot" style={{ background: wiring.colour }} aria-hidden="true" />
+              {wiring.count === 1 ? (
+                <span>
+                  Prowadzisz przewód z&nbsp;<strong>{wiring.label}</strong> — kliknij drugą
+                  szpilkę, żeby połączyć.
+                </span>
+              ) : (
+                <span>
+                  Prowadzisz wiązkę <strong>{wiring.count} przewodów</strong> z&nbsp;
+                  <strong>{wiring.label}</strong> — kliknij szpilkę pierwszej żyły, reszta
+                  wejdzie w kolejne linie.
+                </span>
+              )}
+              <span className="wiring-esc">Esc odkłada</span>
+            </div>
+          )}
 
           {notice && <div className="board-notice">{notice}</div>}
 

@@ -3,9 +3,10 @@ import { CONNECTORS, type Board, type BoardState, type NetLevel, type PinRef } f
 import { BOARD_HELP, DECORATION_HELP, type BoardHelp } from '../knowledge/board-help'
 import { getBox } from './bounds'
 import { BoardArtwork } from './BoardArtwork'
-import { WireLayer, describePin } from './WireLayer'
-import { WirePreview } from './WirePreview'
+import { ConnectorBoot, WireLayer, WireStrokes, describePin } from './WireLayer'
 import {
+  BOARD_HEIGHT,
+  BOARD_WIDTH,
   DECORATIONS,
   HEADERS,
   JUMPERS,
@@ -20,20 +21,38 @@ import {
   SEGMENT_DISPLAY,
   pinPosition,
 } from './layout'
-import type { Point, Rope } from './rope'
+import { routeBetween, type Point, type WireRoute } from './route'
+import { MAX_BUNDLE, bundleColours, bundleTargets, describeSelection } from './bundle'
 import { panBy, zoomAt, type Viewport } from './viewport'
 
 /**
  * Interaktywna plytka: piny, peryferia i przewody.
  *
- * Cztery decyzje, ktore decyduja o tym, czy da sie tego uzywac:
+ * PROWADZENIE PRZEWODU dziala na KLIKNIECIA, nie na przytrzymanie przycisku:
+ *
+ *   1. klikniecie wolnej szpilki PODNOSI przewod - plytka sie przygasza,
+ *      wszystkie wolne szpilki dostaja obraczki, a nad rysunkiem staje pasek
+ *      z informacja, co sie dzieje;
+ *   2. zblizenie kursora do drugiej szpilki pokazuje DOKLADNIE te zyle, ktora
+ *      powstanie (ten sam ksztalt liczy route.ts dla podgladu i polaczenia);
+ *   3. drugie klikniecie laczy; Esc, ponowne klikniecie szpilki zrodlowej
+ *      albo klikniecie w tlo odklada przewod.
+ *
+ * Dlaczego klikniecia: miedzy nimi wolno przyblizac i przesuwac widok, wiec
+ * da sie wybrac szpilke przy jednym powiekszeniu i cel przy innym - przy
+ * przeciaganiu bylo to niewykonalne. Klikniecie dziala tez na ekranie
+ * dotykowym i nie wymaga trzymania wcisnietego przycisku przez pol plytki.
+ * PRZECIAGNIECIE z szpilki nadal jednak dziala - to ten sam automat, w ktorym
+ * puszczenie przycisku nad celem gra role drugiego klikniecia.
+ *
+ * Pozostale decyzje, ktore decyduja o tym, czy da sie tego uzywac:
  *
  * 1. PINY SA RYSOWANE NAD PRZEWODAMI. Przy kilkunastu zylach wiszacych nad
  *    zlaczem nie da sie inaczej trafic w sasiedni pin - przewod przechwytywalby
  *    klikniecie.
- * 2. PRZYCIAGANIE DO NAJBLIZSZEGO PINU. Puszczenie przewodu w poblizu pinu
- *    wystarczy; nie trzeba celowac w kwadracik o boku 8 jednostek.
- * 3. PRZEWODY BLEDNA I PRZESTAJA LAPAC KLIKNIECIA NA CZAS PRZECIAGANIA,
+ * 2. PRZYCIAGANIE DO NAJBLIZSZEGO PINU. Klikniecie albo puszczenie w poblizu
+ *    pinu wystarczy; nie trzeba celowac w kwadracik o boku 8 jednostek.
+ * 3. PRZEWODY BLEDNA I PRZESTAJA LAPAC KLIKNIECIA NA CZAS PROWADZENIA,
  *    zeby bylo widac, dokad sie celuje.
  * 4. PRZESUWANIE I POWIEKSZANIE JAK NA MAPIE. Kolko myszy przybliza w miejscu
  *    kursora, przeciagniecie tla przesuwa obraz. Elementy, ktore cos robia
@@ -78,18 +97,26 @@ interface Props {
    */
   onBeforeWiringChange: (label: string) => void
   /**
-   * Krotki komunikat nad rysunkiem. Uzywany tam, gdzie przeciagniecie nie
+   * Krotki komunikat nad rysunkiem. Uzywany tam, gdzie klikniecie nie
    * daje zadnego efektu - bez slowa wyjasnienia „nic sie nie stalo” wyglada
    * identycznie jak usterka narzedzia.
    */
   onNotice: (text: string) => void
+  /**
+   * Stan prowadzenia przewodu dla nadrzednego widoku: opis zrodla, kolor
+   * pierwszej zyly i liczba zyl (wiazka ma ich kilka), albo `null`, gdy nic
+   * nie jest podniesione. Widok pokazuje z tego staly pasek nad plytka -
+   * w SVG napis skalowalby sie razem z rysunkiem i przy oddaleniu bylby
+   * nieczytelny.
+   */
+  onWiringState: (state: { label: string; colour: string; count: number } | null) => void
 }
 
 function samePin(a: PinRef, b: PinRef): boolean {
   return a.connector === b.connector && a.index === b.index
 }
 
-/** Promien, w ktorym przewod „wskakuje” na pin. */
+/** Promien, w ktorym klikniecie albo puszczony przewod „wskakuje” na pin. */
 const SNAP_RADIUS = 46
 
 /** Ile pikseli musi przejechac kursor, zeby uznac to za przesuwanie, a nie klikniecie. */
@@ -114,10 +141,23 @@ export function BoardCanvas({
   onView,
   onBeforeWiringChange,
   onNotice,
+  onWiringState,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
-  /** Zyla trzymana w reku. `colour` ustalamy z gory, zeby podglad mial juz kolor gotowego przewodu. */
-  const [drag, setDrag] = useState<{ from: PinRef; anchor: Point; cursor: Point; colour: string } | null>(null)
+  /**
+   * Podniesione przewody: szpilki zrodlowe i kolory przyszlych zyl.
+   * Zwykle klikniecie podnosi jedna (lista jednoelementowa); zaznaczenie
+   * prostokatne z Shiftem podnosi cala wiazke. Kolory ustalamy juz przy
+   * podniesieniu, zeby podglad mial kolory polaczen, ktore z niego powstana.
+   */
+  const [armed, setArmed] = useState<{ pins: PinRef[]; colours: string[] } | null>(null)
+  /**
+   * Szpilka, na ktora przewod wskoczy przy nastepnym kliknieciu - najblizsza
+   * kursorowi w promieniu przyciagania. Trzymana jako klucz `zlacze:linia`,
+   * wiec stan zmienia sie TYLKO przy przejsciu na inna szpilke, a nie przy
+   * kazdym ruchu myszy (aktualizacje ta sama wartoscia React pomija).
+   */
+  const [snapKey, setSnapKey] = useState<string | null>(null)
   const [hoveredPin, setHoveredPin] = useState<string | null>(null)
   /** Identyfikator obrysu elementu pod kursorem - stad podswietlenie. */
   const [hoveredBox, setHoveredBox] = useState<string | null>(null)
@@ -128,20 +168,25 @@ export function BoardCanvas({
    */
   const [calloutHost, setCalloutHost] = useState<SVGGElement | null>(null)
   /**
-   * Ksztalt, ktory swiezo utworzony przewod ma przejac po podgladzie.
-   * Bez tego zyla w chwili polaczenia przeskakiwala w zupelnie inne polozenie.
+   * Cienka linia od szpilki zrodlowej do kursora - widac, ze przewod „idzie
+   * za reka”. Aktualizowana WPROST na elemencie SVG, bez stanu Reacta:
+   * ruch myszy nie moze przerysowywac calego widoku przy kazdym pikselu,
+   * bo to wlasnie takie ciagle przerysowania dlawia slabsze komputery.
    */
-  const [handoff, setHandoff] = useState<{ id: string; rope: Rope } | null>(null)
-  /** Lancuch podgladu udostepniony przez WirePreview - stad bierzemy ksztalt. */
-  const previewRope = useRef<Rope | null>(null)
-  const keepPreviewRope = useCallback((rope: Rope | null) => {
-    previewRope.current = rope
-  }, [])
+  const cursorLine = useRef<SVGLineElement | null>(null)
 
-  // Przekazany ksztalt jest jednorazowy - zwalniamy go zaraz po wykorzystaniu.
+  // Pasek „prowadzisz przewod” w nadrzednym widoku podaza za podniesieniem.
   useEffect(() => {
-    if (handoff) setHandoff(null)
-  }, [handoff])
+    onWiringState(
+      armed
+        ? {
+            label: describeSelection(armed.pins),
+            colour: armed.colours[0],
+            count: armed.pins.length,
+          }
+        : null,
+    )
+  }, [armed, onWiringState])
 
   /**
    * Rozdzielenie wskazania od wyboru jest tu celowe.
@@ -282,7 +327,15 @@ export function BoardCanvas({
   }, [])
 
   const beginPan = (event: React.PointerEvent) => {
-    if (drag) return
+    // Shift + przeciagniecie to zaznaczenie prostokatne (wiazka przewodow),
+    // nie przesuwanie widoku. Dziala takze wtedy, gdy zaczyna sie na szpilce.
+    if (event.button === 0 && event.shiftKey) {
+      beginMarquee(event)
+      return
+    }
+    // Podniesiony przewod NIE blokuje przesuwania: miedzy kliknieciami wolno
+    // dojechac do celu po drugiej stronie plytki. To jedna z glownych przewag
+    // laczenia kliknieciami nad przeciaganiem.
     // Lewy przycisk przesuwa tlo, srodkowy - takze elementy interaktywne.
     if (event.button !== 0 && event.button !== 1) return
     if (event.button === 0 && (event.target as Element).closest('[data-nopan]')) return
@@ -325,16 +378,17 @@ export function BoardCanvas({
   }
 
   // -------------------------------------------------------------------------
-  // Prowadzenie przewodow
+  // Prowadzenie przewodow: klikniecie podnosi, klikniecie laczy
+  // (przeciagniecie ze szpilki tez dziala - to ten sam automat)
   // -------------------------------------------------------------------------
 
   /**
    * Pin najblizszy podanemu punktowi - o ile miesci sie w promieniu przyciagania.
    *
    * Osobna funkcja, a nie tylko wartosc wyliczona ze stanu, bo w chwili
-   * puszczenia przycisku musimy uzyc DOKLADNIE tej pozycji kursora, ktora
-   * przyszla ze zdarzeniem. Poleganie na stanie oznaczaloby, ze przy bardzo
-   * szybkim ruchu myszy zyla ladowala tam, gdzie kursor byl klatke wczesniej.
+   * klikniecia musimy uzyc DOKLADNIE tej pozycji kursora, ktora przyszla
+   * ze zdarzeniem. Poleganie na stanie oznaczaloby, ze przy bardzo szybkim
+   * ruchu myszy zyla ladowala tam, gdzie kursor byl klatke wczesniej.
    */
   const findSnap = useCallback(
     (cursor: Point): PinCandidate | null => {
@@ -353,155 +407,345 @@ export function BoardCanvas({
     [candidates],
   )
 
-  /** Cel widoczny na rysunku - liczony z ostatniego zatwierdzonego polozenia. */
-  const snapTarget = useMemo<PinCandidate | null>(
-    () => (drag ? findSnap(drag.cursor) : null),
-    [drag, findSnap],
-  )
+  /** Szpilka docelowa odtworzona z klucza przyciagania. */
+  const snapPin = useMemo<PinRef | null>(() => {
+    if (!snapKey) return null
+    const [connector, index] = snapKey.split(':')
+    return { connector: connector as PinRef['connector'], index: Number(index) }
+  }, [snapKey])
+
+  /** Czy te dwie szpilki juz laczy zyla. */
+  const alreadyWired = (a: PinRef, b: PinRef) =>
+    board.wires.some(
+      (wire) =>
+        (samePin(wire.a, a) && samePin(wire.b, b)) || (samePin(wire.a, b) && samePin(wire.b, a)),
+    )
 
   /**
-   * Pin, do ktorego zyla naprawde sie podepnie.
+   * Podglad zyl do szpilki docelowej - DOKLADNIE te trasy, ktore powstana
+   * po kliknieciu. Liczy je ta sama funkcja, co dla gotowych przewodow, wiec
+   * polaczenie nie moze wyladowac gdzie indziej, niz pokazywal podglad.
+   * (W wersji z fizyka podglad i gotowa zyla byly dwiema roznymi symulacjami
+   * i przewod potrafil po polaczeniu "nie trafic w pin".)
    *
-   * Pin zrodlowy zostaje na liscie kandydatow celowo: dopoki kursor jest tuz
-   * przy nim, to on jest najblizszy, wiec podglad nie przeskakuje na sasiada
-   * przy pierwszym drgnieciu reki. Do polaczenia i do podswietlenia bierzemy
-   * juz jednak tylko cel INNY niz zrodlo.
+   * Dla wiazki cel to wskazana szpilka i KOLEJNE linie zlacza w dol - jak
+   * przy wpinaniu tasmy. `fit: false` mowi, czemu wiazka tu nie wejdzie.
    */
-  const connectTarget = useMemo<PinCandidate | null>(() => {
-    if (!drag || !snapTarget) return null
-    return samePin(snapTarget.pin, drag.from) ? null : snapTarget
-  }, [drag, snapTarget])
+  const preview = (() => {
+    if (!armed || !snapPin) return null
+    if (armed.pins.length === 1 && samePin(armed.pins[0], snapPin)) return null
+    const targets = bundleTargets(armed.pins.length, snapPin)
+    if (!targets) return { fit: false as const, reason: 'za krótkie złącze na taką wiązkę' }
+    if (targets.some((target) => armed.pins.some((pin) => samePin(pin, target)))) {
+      return { fit: false as const, reason: 'cel zachodzi na zaznaczone szpilki' }
+    }
+    const wires: Array<{ route: WireRoute; colour: string; duplicate: boolean }> = []
+    for (let i = 0; i < armed.pins.length; i++) {
+      const route = routeBetween(armed.pins[i], targets[i])
+      if (!route) return null
+      wires.push({
+        route,
+        colour: armed.colours[i],
+        duplicate: alreadyWired(armed.pins[i], targets[i]),
+      })
+    }
+    return { fit: true as const, wires, targets }
+  })()
 
-  const resolvePin = useCallback(
-    (connector: string, index: number) => pinPosition(connector as PinRef['connector'], index),
-    [],
-  )
+  /** Szpilki docelowe wiazki - do obraczek w rzedzie pinow. */
+  const targetKeys = new Set<string>()
+  if (preview?.fit) {
+    for (const target of preview.targets) targetKeys.add(`${target.connector}:${target.index}`)
+  }
 
-  /**
-   * Wskaznik przeciagania. Przejmujemy go DOPIERO po ruszeniu kursorem, bo
-   * przejety wskaznik przekierowuje pozniejsze `click` na cale plotno -
-   * a samo klikniecie pinu ma pokazac opis zlacza.
-   */
-  const dragPointer = useRef<{
+  /** Powod, dla ktorego klikniecie w cel NIC by nie dalo - do bursztynowej etykiety. */
+  const snapProblem = !armed || !preview
+    ? null
+    : preview.fit === false
+      ? preview.reason
+      : preview.wires.every((wire) => wire.duplicate)
+        ? armed.pins.length === 1
+          ? 'już połączone'
+          : 'wszystko już połączone'
+        : null
+
+  /** Gest rozpoczety na szpilce zrodlowej - odroznia klikniecie od przeciagniecia. */
+  const gesture = useRef<{
     pointerId: number
     originX: number
     originY: number
-    captured: boolean
-    /** Pin zrodlowy i kolor - trzymane tutaj, zeby nie zalezec od stanu Reacta. */
-    from: PinRef
-    colour: string
+    moved: boolean
   } | null>(null)
 
-  const beginDrag = (pin: PinRef, occupied: boolean, event: React.PointerEvent) => {
+  /** Odlozenie przewodu - konczy prowadzenie bez polaczenia. */
+  const disarm = useCallback(() => {
+    setArmed(null)
+    setSnapKey(null)
+    gesture.current = null
+    if (cursorLine.current) cursorLine.current.style.display = 'none'
+  }, [])
+
+  /**
+   * Domkniecie polaczenia - wspolne dla klikniecia, puszczenia przewodu
+   * i wiazki. Cel wiazki: wskazana szpilka i kolejne linie zlacza w dol.
+   */
+  const completeConnection = (
+    source: { pins: PinRef[]; colours: string[] },
+    target: PinRef,
+  ) => {
+    const targets = bundleTargets(source.pins.length, target)
+    if (!targets) {
+      onNotice(
+        `Wiązka ${source.pins.length} żył potrzebuje ${source.pins.length} kolejnych linii od klikniętej szpilki w dół — to złącze jest za krótkie.`,
+      )
+      return
+    }
+    if (targets.some((t) => source.pins.some((pin) => samePin(pin, t)))) {
+      onNotice('Miejsce docelowe zachodzi na zaznaczone szpilki — wybierz inne złącze.')
+      return
+    }
+    // Pary juz polaczone pomijamy: druga zyla lezalaby dokladnie na pierwszej,
+    // wiec nic by nie bylo widac, a licznik przewodow rosl.
+    const fresh = source.pins
+      .map((pin, i) => ({ a: pin, b: targets[i], colour: source.colours[i] }))
+      .filter(({ a, b }) => !alreadyWired(a, b))
+    if (fresh.length === 0) {
+      onNotice(
+        source.pins.length === 1
+          ? 'Te dwie szpilki są już połączone — druga żyła nic by nie zmieniła.'
+          : 'Wszystkie te połączenia już istnieją — nowe żyły nic by nie zmieniły.',
+      )
+      return
+    }
+    onNotice(
+      fresh.length < source.pins.length
+        ? `Dołożono ${fresh.length} z ${source.pins.length} żył — reszta tych połączeń już była.`
+        : '', // udalo sie w calosci - gasimy ewentualne ostrzezenie z poprzedniej proby
+    )
+    onBeforeWiringChange(
+      fresh.length === 1 ? 'podłączenie przewodu' : `podłączenie wiązki ${fresh.length} przewodów`,
+    )
+    // Wspolny identyfikator tasmy: zyly polozone jednym ruchem sa jedna wiazka.
+    const ribbon = fresh.length > 1 ? `u${board.wires.length}_${Date.now().toString(36)}` : undefined
+    for (const { a, b, colour } of fresh) board.connect(a, b, colour, ribbon)
+    disarm()
+  }
+
+  /**
+   * Nacisniecie szpilki. Trzy znaczenia, zaleznie od stanu: podniesienie
+   * przewodu, odlozenie go (ta sama szpilka) albo polaczenie (inna szpilka).
+   */
+  const pressPin = (pin: PinRef, occupied: boolean, event: React.PointerEvent) => {
+    if (event.button !== 0) return
+    // Shift + nacisniecie zaczyna zaznaczenie prostokatne (wiazke) - nie
+    // przechwytujemy go tutaj, ma dojsc do obslugi na calym plotnie.
+    if (event.shiftKey) return
     if (occupied) {
       hover(BOARD_HELP.JP27 ?? null, 'złącze JP27')
       return
     }
-    if (event.button !== 0) return
-    const anchor = pinPosition(pin.connector, pin.index)
-    if (!anchor) return
     // Bez preventDefault(): zablokowany `pointerdown` nie wytwarza pozniej
-    // zdarzenia `click`, a klikniecie pinu ma przypiac opis zlacza.
+    // zdarzenia `click`, a klikniecie pinu ma takze przypiac opis zlacza.
     event.stopPropagation()
-    const colour = nextWireColour(board.wires.length)
-    dragPointer.current = {
-      pointerId: event.pointerId,
-      originX: event.clientX,
-      originY: event.clientY,
-      captured: false,
-      from: pin,
-      colour,
-    }
-    setDrag({ from: pin, anchor, cursor: toSvgPoint(event.clientX, event.clientY), colour })
-  }
-
-  const releaseDragPointer = () => {
-    const pointer = dragPointer.current
-    if (pointer?.captured) {
-      try {
-        svgRef.current?.releasePointerCapture(pointer.pointerId)
-      } catch {
-        // Wskaznika moglo juz nie byc - nic sie nie dzieje.
+    if (!armed) {
+      setArmed({ pins: [pin], colours: [nextWireColour(board.wires.length)] })
+      setSnapKey(null)
+      gesture.current = {
+        pointerId: event.pointerId,
+        originX: event.clientX,
+        originY: event.clientY,
+        moved: false,
       }
+      return
     }
-    dragPointer.current = null
+    if (armed.pins.length === 1 && samePin(armed.pins[0], pin)) {
+      disarm()
+      return
+    }
+    completeConnection(armed, pin)
   }
 
   /**
-   * Puszczenie przycisku: laczymy, jesli zyla trafila w pin.
+   * Puszczenie przycisku po gescie rozpoczetym na szpilce zrodlowej.
    *
-   * Wszystko bierzemy z referencji i z pozycji podanej przez samo zdarzenie -
-   * stan Reacta moze byc o klatke z tylu.
+   * Kursor sie nie ruszyl = zwykle klikniecie: przewod zostaje podniesiony
+   * i czeka na drugie klikniecie. Kursor sie ruszyl = uzytkownik PRZECIAGNAL
+   * zyle starym zwyczajem: puszczenie przy szpilce laczy, puszczenie w polu
+   * odklada przewod i podpowiada, ze mozna laczyc kliknieciami.
    */
-  const finishDrag = (cursor: Point) => {
-    const pointer = dragPointer.current
-    if (!pointer) {
-      setDrag(null)
+  const finishArmGesture = (cursor: Point) => {
+    const active = gesture.current
+    gesture.current = null
+    if (!active || !active.moved || !armed) return
+    const target = findSnap(cursor)
+    if (!target) {
+      disarm()
+      onNotice(
+        'Przewód odłożony — nie trafił w żadną szpilkę. Wygodniej łączyć dwoma kliknięciami: raz pierwsza szpilka, raz druga.',
+      )
       return
     }
-    const target = findSnap(cursor)
-    const connect = target && !samePin(target.pin, pointer.from) ? target.pin : null
+    // Powrot na szpilke zrodlowa to nie pomylka - przewod zostaje w reku.
+    if (armed.pins.length === 1 && samePin(target.pin, armed.pins[0])) return
+    completeConnection(armed, target.pin)
+  }
 
-    if (!connect) {
-      // O nieudanej probie mowimy tylko wtedy, gdy uzytkownik naprawde ciagnal
-      // zyle. Zwykle klikniecie pinu ma pokazac opis zlacza i nic wiecej.
-      if (pointer.captured) {
-        onNotice('Przewód nie trafił w żadną szpilkę — puść go bliżej tej, do której chcesz go podpiąć.')
-      }
-    } else {
-      // Te same dwa piny juz polaczone - druga zyla lezalaby dokladnie na
-      // pierwszej, wiec nic by nie bylo widac, a licznik przewodow rosl.
-      const duplicate = board.wires.some(
-        (wire) =>
-          (samePin(wire.a, pointer.from) && samePin(wire.b, connect)) ||
-          (samePin(wire.a, connect) && samePin(wire.b, pointer.from)),
-      )
-      if (duplicate) {
-        onNotice('Te dwie szpilki są już połączone — druga żyła nic by nie zmieniła.')
-      } else {
-        onNotice('') // udalo sie - gasimy ewentualne ostrzezenie z poprzedniej proby
-        onBeforeWiringChange('podłączenie przewodu')
-        const wire = board.connect(pointer.from, connect, pointer.colour)
-        // Gotowa zyla zaczyna dokladnie tam, gdzie skonczyl podglad.
-        if (previewRope.current) setHandoff({ id: wire.id, rope: previewRope.current })
+  // -------------------------------------------------------------------------
+  // Zaznaczenie prostokatne (Shift + przeciagniecie) - wiazka przewodow
+  // -------------------------------------------------------------------------
+
+  /** Trwajace zaznaczenie; prostokat rysowany jest wprost na elemencie SVG. */
+  const marquee = useRef<{ pointerId: number; start: Point } | null>(null)
+  const marqueeRect = useRef<SVGRectElement | null>(null)
+
+  const beginMarquee = (event: React.PointerEvent) => {
+    const start = toSvgPoint(event.clientX, event.clientY)
+    marquee.current = { pointerId: event.pointerId, start }
+    try {
+      svgRef.current?.setPointerCapture(event.pointerId)
+    } catch {
+      // Wskaznika moglo juz nie byc - zaznaczanie dziala dalej w obrebie plotna.
+    }
+  }
+
+  const trackMarquee = (event: React.PointerEvent) => {
+    const active = marquee.current
+    const rect = marqueeRect.current
+    if (!active || !rect || event.pointerId !== active.pointerId) return
+    const cursor = toSvgPoint(event.clientX, event.clientY)
+    rect.setAttribute('x', String(Math.min(active.start.x, cursor.x)))
+    rect.setAttribute('y', String(Math.min(active.start.y, cursor.y)))
+    rect.setAttribute('width', String(Math.abs(cursor.x - active.start.x)))
+    rect.setAttribute('height', String(Math.abs(cursor.y - active.start.y)))
+    rect.style.display = ''
+  }
+
+  /**
+   * Koniec zaznaczenia: wolne szpilki z prostokata staja sie wiazka.
+   *
+   * Obie kolumny zlacza portu to ta sama linia, wiec liczymy LINIE, nie pady.
+   * Kolejnosc zyl w wiazce: od gory do dolu (potem od lewej) - pierwsza
+   * zaznaczona linia trafi w klikniete miejsce, kazda nastepna o linie nizej.
+   */
+  const finishMarquee = (event: React.PointerEvent) => {
+    const active = marquee.current
+    marquee.current = null
+    if (marqueeRect.current) marqueeRect.current.style.display = 'none'
+    try {
+      svgRef.current?.releasePointerCapture(event.pointerId)
+    } catch {
+      // Wskaznika moglo juz nie byc - nic sie nie dzieje.
+    }
+    if (!active) return
+    suppressClick.current = true
+    const cursor = toSvgPoint(event.clientX, event.clientY)
+    const minX = Math.min(active.start.x, cursor.x)
+    const maxX = Math.max(active.start.x, cursor.x)
+    const minY = Math.min(active.start.y, cursor.y)
+    const maxY = Math.max(active.start.y, cursor.y)
+
+    const lines = new Map<string, { pin: PinRef; x: number; y: number }>()
+    for (const candidate of candidates) {
+      if (candidate.occupied) continue
+      const { x, y } = candidate.position
+      if (x < minX || x > maxX || y < minY || y > maxY) continue
+      const key = `${candidate.pin.connector}:${candidate.pin.index}`
+      const known = lines.get(key)
+      if (!known || y < known.y || (y === known.y && x < known.x)) {
+        lines.set(key, { pin: candidate.pin, x, y })
       }
     }
-
-    releaseDragPointer()
-    setDrag(null)
+    const ordered = [...lines.values()].sort((a, b) => a.y - b.y || a.x - b.x)
+    if (ordered.length === 0) return
+    if (ordered.length > MAX_BUNDLE) {
+      onNotice(
+        `Zaznaczono ${ordered.length} szpilek, a największe złącze ma ${MAX_BUNDLE} linii — takiej wiązki nie dałoby się nigdzie wpiąć.`,
+      )
+      return
+    }
+    const pins = ordered.map((entry) => entry.pin)
+    setArmed({
+      pins,
+      colours: pins.length === 1 ? [nextWireColour(board.wires.length)] : bundleColours(pins.length),
+    })
+    setSnapKey(null)
+    onNotice('')
   }
 
-  /** Rezygnacja - Escape, wyjscie kursorem poza plytke, przerwane zdarzenie. */
-  const cancelDrag = () => {
-    releaseDragPointer()
-    setDrag(null)
-  }
-
-  // Escape przerywa prowadzenie zyly. Bez tego jedynym wyjsciem bylo puszczenie
-  // przycisku z dala od pinow - a to wymaga wiedzy, ze promien przyciagania
-  // w ogole istnieje.
+  // Escape odklada podniesiony przewod. Bez tego jedynym wyjsciem byloby
+  // klikniecie w tlo - a to wymaga wiedzy, ze tak wlasnie sie rezygnuje.
   useEffect(() => {
-    if (!drag) return
+    if (!armed) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
-      releaseDragPointer()
-      setDrag(null)
+      disarm()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag])
+  }, [armed, disarm])
 
   const describeConnector = (id: string): BoardHelp | null => BOARD_HELP[id] ?? null
+
+  /** Pad szpilki zrodlowej najblizszy kursorowi - stad rusza linia podgladu. */
+  const nearestSourcePad = (pin: PinRef, cursor: Point): Point | null => {
+    let best: Point | null = null
+    let bestDistance = Infinity
+    for (const candidate of candidates) {
+      if (!samePin(candidate.pin, pin)) continue
+      const distance = Math.hypot(candidate.position.x - cursor.x, candidate.position.y - cursor.y)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        best = candidate.position
+      }
+    }
+    return best
+  }
+
+  /**
+   * Ruch myszy z przewodem w reku. Jedyna zmiana stanu Reacta to przejscie
+   * przyciagania na INNA szpilke; sama linia do kursora jest ustawiana wprost
+   * na elemencie SVG. Dzieki temu prowadzenie przewodu nie przerysowuje
+   * widoku przy kazdym pikselu - a to wlasnie takie ciagle przerysowania
+   * dlawily slabsze komputery w wersji z fizyka.
+   */
+  const trackWiring = (event: React.PointerEvent) => {
+    if (!armed) return
+    const cursor = toSvgPoint(event.clientX, event.clientY)
+
+    const snap = findSnap(cursor)
+    const selfSnap =
+      snap !== null && armed.pins.length === 1 && samePin(snap.pin, armed.pins[0])
+    const nextKey = snap && !selfSnap ? `${snap.pin.connector}:${snap.pin.index}` : null
+    setSnapKey((current) => (current === nextKey ? current : nextKey))
+
+    const line = cursorLine.current
+    if (!line) return
+    if (nextKey) {
+      // Przy widocznym podgladzie zyly linia tylko by go dublowala.
+      line.style.display = 'none'
+      return
+    }
+    const start = nearestSourcePad(armed.pins[0], cursor)
+    if (!start) return
+    line.setAttribute('x1', String(Math.round(start.x)))
+    line.setAttribute('y1', String(Math.round(start.y)))
+    line.setAttribute('x2', String(Math.round(cursor.x)))
+    line.setAttribute('y2', String(Math.round(cursor.y)))
+    line.style.display = ''
+  }
 
   return (
     <svg
       ref={svgRef}
       viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`}
-      className={'board-svg' + (drag ? ' dragging' : '') + (panning ? ' panning' : '')}
+      className={'board-svg' + (armed ? ' wiring' : '') + (panning ? ' panning' : '')}
       onPointerDown={beginPan}
       onPointerMove={(event) => {
+        if (marquee.current) {
+          trackMarquee(event)
+          return
+        }
         const current = pan.current
         if (current && event.pointerId === current.pointerId) {
           const dx = event.clientX - current.originX
@@ -518,40 +762,51 @@ export function BoardCanvas({
           onView(panBy(current.start, -dx * current.unitsPerPixel, -dy * current.unitsPerPixel))
           return
         }
-        // Uwaga: warunkiem jest REFERENCJA, nie stan `drag`. Pierwszy ruch potrafi
-        // przyjsc, zanim React zdazy zatwierdzic stan ustawiony przy nacisnieciu -
-        // przy szybkim pociagnieciu myszy zyla w ogole wtedy nie ruszala.
-        const pointer = dragPointer.current
-        if (pointer && event.pointerId === pointer.pointerId) {
-          if (
-            !pointer.captured &&
-            (Math.abs(event.clientX - pointer.originX) > PAN_THRESHOLD ||
-              Math.abs(event.clientY - pointer.originY) > PAN_THRESHOLD)
-          ) {
-            // Od tej chwili to na pewno przeciaganie, a nie klikniecie: przejmujemy
-            // wskaznik (zyle da sie prowadzic takze poza plotnem) i polykamy
-            // klikniecie, ktore przyjdzie na koncu.
-            pointer.captured = true
-            suppressClick.current = true
-            try {
-              svgRef.current?.setPointerCapture(pointer.pointerId)
-            } catch {
-              // Wskaznik moze byc juz nieaktywny - przeciaganie dziala dalej,
-              // tylko bez podazania za kursorem poza plotnem.
-              pointer.captured = false
-            }
-          }
-          const cursor = toSvgPoint(event.clientX, event.clientY)
-          setDrag((current) => (current ? { ...current, cursor } : current))
+        // Uwaga: prog ruchu liczymy na REFERENCJI, nie na stanie. Pierwszy ruch
+        // potrafi przyjsc, zanim React zatwierdzi stan ustawiony przy nacisnieciu.
+        const active = gesture.current
+        if (
+          active &&
+          event.pointerId === active.pointerId &&
+          !active.moved &&
+          (Math.abs(event.clientX - active.originX) > PAN_THRESHOLD ||
+            Math.abs(event.clientY - active.originY) > PAN_THRESHOLD)
+        ) {
+          active.moved = true
         }
+        trackWiring(event)
       }}
       onPointerUp={(event) => {
+        if (marquee.current && event.pointerId === marquee.current.pointerId) {
+          finishMarquee(event)
+          return
+        }
+        // Czy to bylo klikniecie w tlo (nacisniecie bez ruchu)? Sprawdzamy,
+        // ZANIM endPan() wyczysci stan przesuwania.
+        const backgroundClick = pan.current !== null && !pan.current.moved && event.button === 0
         endPan()
-        if (dragPointer.current) finishDrag(toSvgPoint(event.clientX, event.clientY))
+        if (gesture.current && event.pointerId === gesture.current.pointerId) {
+          finishArmGesture(toSvgPoint(event.clientX, event.clientY))
+          return
+        }
+        if (armed && backgroundClick) {
+          // Klikniecie w tlo z przewodem w reku: przy szpilce laczy
+          // (przyciaganie wybacza niecelne klikniecie), w polu odklada przewod.
+          const snap = findSnap(toSvgPoint(event.clientX, event.clientY))
+          const ownSource =
+            snap !== null && armed.pins.length === 1 && samePin(snap.pin, armed.pins[0])
+          if (snap && !ownSource) completeConnection(armed, snap.pin)
+          else disarm()
+        }
       }}
       onPointerCancel={() => {
         endPan()
-        cancelDrag()
+        // Przerwany gest konczy tylko przeciaganie i zaznaczanie; podniesiony
+        // przewod zostaje w reku - na ekranie dotykowym przewijanie strony
+        // nie moze odkladac przewodu w polowie laczenia.
+        gesture.current = null
+        marquee.current = null
+        if (marqueeRect.current) marqueeRect.current.style.display = 'none'
       }}
       onDoubleClick={(event) => {
         if ((event.target as Element).closest('[data-nopan]')) return
@@ -559,9 +814,9 @@ export function BoardCanvas({
       }}
       onPointerLeave={() => {
         if (pan.current) return // trwa przesuwanie - wskaznik jest przechwycony
-        // Wyjscie poza plotno przed przejeciem wskaznika to rezygnacja,
-        // a nie polaczenie - inaczej zyla wpinalaby sie w przypadkowy pin.
-        cancelDrag()
+        // Przewod zostaje w reku (mozna wrocic), ale linia do kursora znika -
+        // inaczej wskazywalaby ostatni punkt przy krawedzi.
+        if (cursorLine.current) cursorLine.current.style.display = 'none'
         hover(null, null)
       }}
     >
@@ -608,17 +863,31 @@ export function BoardCanvas({
       <ResetButton onReset={onReset} interact={interact} />
       <ProgrammingLed active={programming} interact={interact} />
 
+      {/*
+        Przygaszenie plytki na czas prowadzenia przewodu. Jeden prostokat
+        z przejsciem CSS na przezroczystosci - najtanszy mozliwy sposob:
+        zadnych filtrow, zadnego przerysowywania elementow pod spodem.
+        Lezy POD warstwa przewodow i pod pinami, wiec szpilki - jedyne
+        miejsca, ktore w tym trybie cos znacza - zostaja w pelnej jasnosci.
+      */}
+      <rect
+        className={'board-dim' + (armed ? ' on' : '')}
+        x={-60}
+        y={-60}
+        width={BOARD_WIDTH + 120}
+        height={BOARD_HEIGHT + 120}
+        pointerEvents="none"
+      />
+
       {/* przewody pod pinami - inaczej nie da sie trafic w sasiedni pin */}
       {!wiresHidden && (
         <g
           className="wire-stack"
-          opacity={drag ? 0.28 : 1}
-          pointerEvents={drag ? 'none' : undefined}
+          opacity={armed ? 0.28 : 1}
+          pointerEvents={armed ? 'none' : undefined}
         >
           <WireLayer
             wires={board.wires}
-            resolvePin={resolvePin}
-            handoff={handoff}
             onRemove={(id) => {
               onBeforeWiringChange('wypięcie przewodu')
               board.disconnect(id)
@@ -641,19 +910,43 @@ export function BoardCanvas({
       )}
 
       {/*
-        Zyla trzymana w reku - OSOBNA warstwa, poza grupa przygaszanych przewodow
+        Prowadzony przewod - OSOBNA warstwa, poza grupa przygaszanych przewodow
         i poza przelacznikiem ich ukrywania. To jedyny element, ktorym uzytkownik
         w tej chwili steruje, wiec musi byc widoczny zawsze i w pelnej jasnosci.
+
+        Linia do kursora jest w drzewie na stale (aktualizuje ja trackWiring
+        wprost na elemencie), a podglad zyly pojawia sie po zblizeniu do celu
+        i jest DOKLADNIE trasa przyszlego polaczenia.
       */}
-      {drag && (
-        <WirePreview
-          from={drag.anchor}
-          to={connectTarget ? connectTarget.position : drag.cursor}
-          colour={drag.colour}
-          snapped={connectTarget !== null}
-          onRope={keepPreviewRope}
-        />
+      {armed && (
+        <g pointerEvents="none">
+          <line
+            ref={cursorLine}
+            className="wire-cursor-line"
+            stroke={armed.colours[0]}
+            style={{ display: 'none' }}
+          />
+          {preview?.fit && (
+            <g opacity={0.92}>
+              {preview.wires.map((item, order) => (
+                <g key={order} opacity={item.duplicate ? 0.35 : 1}>
+                  <WireStrokes path={item.route.path} colour={item.colour} />
+                  <ConnectorBoot point={item.route.a} color={item.colour} />
+                  <ConnectorBoot point={item.route.b} color={item.colour} />
+                </g>
+              ))}
+            </g>
+          )}
+        </g>
       )}
+
+      {/* Prostokat zaznaczenia wiazki - aktualizowany wprost, bez stanu Reacta. */}
+      <rect
+        ref={marqueeRect}
+        className="board-marquee"
+        style={{ display: 'none' }}
+        pointerEvents="none"
+      />
 
       {/* --- piny zlaczy (zawsze na wierzchu) --- */}
       {HEADERS.map((header) => {
@@ -671,21 +964,34 @@ export function BoardCanvas({
               const level = board.pinLevel(pin)
               const info = connector.pins[index]
               const key = `${header.id}:${index}`
-              const isSource = drag?.from.connector === header.id && drag.from.index === index
-              const isTarget =
-                connectTarget?.pin.connector === header.id && connectTarget.pin.index === index
+              const sourceOrder = armed ? armed.pins.findIndex((p) => samePin(p, pin)) : -1
+              const isSource = sourceOrder >= 0
+              const isSnap = snapKey === key
+              const isTarget = isSnap || targetKeys.has(key)
               const wired = board.wires.some(
                 (wire) =>
                   (wire.a.connector === header.id && wire.a.index === index) ||
                   (wire.b.connector === header.id && wire.b.index === index),
               )
+              // Stopka dymka mowi, co znaczy klikniecie W TYM stanie automatu.
+              const action = header.occupied
+                ? undefined
+                : armed
+                  ? isSource && armed.pins.length === 1
+                    ? 'Kliknij, żeby odłożyć przewód (Esc też przerywa).'
+                    : armed.pins.length > 1
+                      ? `Kliknij, żeby wpiąć tu wiązkę ${armed.pins.length} żył — pierwsza wejdzie tutaj, reszta w kolejne linie w dół.`
+                      : alreadyWired(armed.pins[0], pin)
+                        ? 'Te szpilki są już połączone.'
+                        : `Kliknij, żeby połączyć z ${describePin(armed.pins[0])}.`
+                  : 'Kliknij, żeby zacząć stąd przewód.'
               return Array.from({ length: header.columns }, (_, column) => {
                 const position = pinPosition(header.id, index, column)!
                 return (
                   <g
                     key={`${key}:${column}`}
                     data-nopan
-                    onPointerDown={(event) => beginDrag(pin, header.occupied === true, event)}
+                    onPointerDown={(event) => pressPin(pin, header.occupied === true, event)}
                     onPointerEnter={() => {
                       // Dymek pinu jest wazniejszy niz dymek calego zlacza: mowi,
                       // ktora to linia mikrokontrolera i jaki ma teraz stan.
@@ -700,7 +1006,7 @@ export function BoardCanvas({
                           board.mcu.powered,
                         ),
                         'złącze ' + header.id,
-                        'Przeciągnij, żeby poprowadzić stąd przewód.',
+                        action,
                       )
                     }}
                     onPointerLeave={() => {
@@ -730,22 +1036,48 @@ export function BoardCanvas({
                     {level === 1 && column === header.columns - 1 && (
                       <circle cx={position.x} cy={position.y} r={6} fill="#4ade80" opacity={0.5} />
                     )}
-                    {wired && !drag && (
+                    {wired && !armed && (
                       <circle cx={position.x} cy={position.y} r={13} fill="none" stroke="#38bdf8" strokeWidth={1.6} opacity={0.5} />
                     )}
-                    {(isSource || isTarget || hoveredPin === key) && (
+                    {/*
+                      Obraczka na kazdej wolnej szpilce, gdy przewod jest w reku -
+                      na przygaszonej plytce od razu widac WSZYSTKIE miejsca,
+                      w ktore da sie go wpiac. Elementy sa statyczne (bez animacji),
+                      wiec setka obraczek nie kosztuje nic poza jednym rysowaniem.
+                    */}
+                    {armed && !header.occupied && !isSource && !isTarget && (
+                      <circle className="pin-open" cx={position.x} cy={position.y} r={13} />
+                    )}
+                    {(isSource || isTarget || (hoveredPin === key && !armed)) && (
                       <circle
                         cx={position.x}
                         cy={position.y}
-                        r={16}
+                        r={isSnap || isSource ? 16 : 14}
                         fill="none"
-                        stroke={isTarget ? '#22c55e' : isSource ? '#f59e0b' : '#e2e8f0'}
-                        strokeWidth={3}
+                        stroke={
+                          isTarget
+                            ? snapProblem
+                              ? '#f59e0b'
+                              : '#22c55e'
+                            : isSource
+                              ? (armed?.colours[sourceOrder] ?? '#f59e0b')
+                              : '#e2e8f0'
+                        }
+                        strokeWidth={isSnap || isSource ? 3 : 2}
                       />
                     )}
-                    {isTarget && (
-                      <text x={position.x} y={position.y - 24} textAnchor="middle" className="snap-label">
-                        {info?.label}
+                    {isSnap && column === 0 && (
+                      <text
+                        x={position.x}
+                        y={position.y - 24}
+                        textAnchor="middle"
+                        className={'snap-label' + (snapProblem ? ' snap-duplicate' : '')}
+                      >
+                        {snapProblem
+                          ? `${info?.label ?? ''} — ${snapProblem}`
+                          : armed && armed.pins.length > 1
+                            ? `${info?.label ?? ''} — tu wejdzie pierwsza żyła`
+                            : info?.label}
                       </text>
                     )}
                   </g>
