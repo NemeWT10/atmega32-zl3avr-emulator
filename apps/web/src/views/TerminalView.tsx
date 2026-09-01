@@ -12,6 +12,31 @@ import { useSimulator, useSimulatorEvents } from '../sim/SimulationContext'
 
 const BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200]
 
+/**
+ * Czym w ogole jest „predkosc transmisji". Zdanie dla kogos, kto widzi
+ * terminal pierwszy raz - a to najczestsza przyczyna smieci na ekranie.
+ */
+const BAUD_HELP =
+  'Prędkość transmisji (w baudach) to liczba bitów wysyłanych w ciągu sekundy. ' +
+  'Obie strony muszą mieć ustawioną TĘ SAMĄ: odbiornik nie dostaje sygnału zegara, ' +
+  'tylko odmierza czas sam — przy złej prędkości próbkuje linię w niewłaściwych ' +
+  'chwilach i zamiast tekstu pokazuje śmieci.\n\n' +
+  'Po stronie płytki prędkość wynika z rejestru UBRR i z RZECZYWISTEGO zegara ' +
+  '(z fuse bitów), a nie z tego, co wpisano w #define F_CPU.\n\n' +
+  '8N1 znaczy: 8 bitów danych, bez bitu parzystości, 1 bit stopu.'
+
+/** Co warto wiedziec o konkretnej predkosci - dymek przy pozycji listy. */
+const BAUD_NOTES: Record<number, string> = {
+  1200: 'Bardzo wolno: 1200 bitów na sekundę to około 120 znaków. Prędkość historyczna, dziś spotykana w prostych czujnikach.',
+  2400: 'Wolna prędkość z czasów modemów telefonicznych. Rzadko używana, ale odporna na niedokładny zegar.',
+  4800: 'Połowa typowej prędkości 9600. Bywa ustawiana tam, gdzie zegar jest bardzo niedokładny.',
+  9600: 'Ustawienie domyślne większości terminali i najczęstsze w ćwiczeniach. Przy zegarze 4 MHz płytka trafia w nie niemal dokładnie; przy fabrycznym 1 MHz błąd sięga 7% i transmisja bywa przekłamana.',
+  19200: 'Dwa razy szybciej niż typowe 9600. Wymaga już dokładniejszego zegara po stronie płytki.',
+  38400: 'Szybka transmisja. Przy wewnętrznym generatorze RC błąd prędkości robi się na tyle duży, że pojawiają się przekłamania.',
+  57600: 'Bardzo szybka transmisja — sensowna raczej przy kwarcu niż przy wewnętrznym generatorze RC.',
+  115200: 'Najszybsza typowa prędkość portu szeregowego. Przy zegarze 1 MHz nie da się jej ustawić w ogóle (wyliczony UBRR wychodzi ujemny) — to częsta przyczyna pustego okna albo śmieci.',
+}
+
 interface Props {
   /**
    * Wersja skrocona - terminal zadokowany pod plytka. Ta sama tresc i te same
@@ -83,29 +108,55 @@ export function TerminalView({ compact = false }: Props = {}) {
   return (
     <div className={'terminal-view' + (compact ? ' compact' : '')}>
       <div className="terminal-toolbar">
-        <label className="inline-select">
+        {/*
+          Dymki sa tu czescia nauki, nie ozdoba: „9600 8N1" nic nie mowi komus,
+          kto widzi terminal pierwszy raz, a wlasnie zle dobrana predkosc jest
+          najczestsza przyczyna smieci na ekranie. Opis ogolny wisi przy napisie,
+          a przy kazdej pozycji listy jest zdanie o TEJ predkosci.
+        */}
+        <label className="inline-select" title={BAUD_HELP}>
           Prędkość terminala:
-          <select value={baud} onChange={(event) => setBaud(Number(event.target.value))}>
+          <select
+            value={baud}
+            title={BAUD_NOTES[baud]}
+            onChange={(event) => setBaud(Number(event.target.value))}
+          >
             {BAUD_RATES.map((rate) => (
-              <option key={rate} value={rate}>
+              <option key={rate} value={rate} title={BAUD_NOTES[rate]}>
                 {rate} 8N1
               </option>
             ))}
           </select>
         </label>
 
-        <label className="checkbox">
+        <label
+          className="checkbox"
+          title={
+            'Pokazuje odebrane bajty jako liczby szesnastkowe zamiast znaków. ' +
+            'Przydaje się przy ramkach binarnych, w których większość bajtów nie jest ' +
+            'żadną literą — jako tekst wyglądają na przypadkowe znaki.'
+          }
+        >
           <input type="checkbox" checked={hexMode} onChange={(event) => setHexMode(event.target.checked)} />
           tryb szesnastkowy (ramki binarne)
         </label>
 
-        <label className="checkbox">
+        <label
+          className="checkbox"
+          title={
+            'Dopisuje do okna to, co sam wysyłasz. Prawdziwy terminal pokazuje wyłącznie ' +
+            'to, co przyszło z drugiej strony — więc gdy płytka nie odsyła echa, okno ' +
+            'wygląda, jakby nic się nie wysłało.'
+          }
+        >
           <input type="checkbox" checked={localEcho} onChange={(event) => setLocalEcho(event.target.checked)} />
           echo lokalne
         </label>
 
         <span className="spacer" />
-        <button onClick={() => simulator.clearSerial()}>Wyczyść</button>
+        <button onClick={() => simulator.clearSerial()} title="Czyści okno. Nie ma wpływu na płytkę — program pracuje dalej.">
+          Wyczyść
+        </button>
       </div>
 
       <div className={'baud-bar' + (mismatch ? ' mismatch' : '')}>
@@ -142,16 +193,17 @@ export function TerminalView({ compact = false }: Props = {}) {
         )}
       </div>
 
-      <pre className="terminal-output" ref={outputRef}>
-        {echoed.length === 0
-          ? text || <EmptyHint powered={simulator.powered} />
-          : renderWithEcho(received, echoed, hexMode)}
-      </pre>
-
       {/*
-        Wiersz wysylania celowo krzyczy: ramka w kolorze akcentu, znak zachety
-        i wlasny podpis. Wczesniej byl to zwykly pasek w kolorze reszty panelu
-        i po prostu ginal - uzytkownicy go nie zauwazali.
+        Wiersz wysylania stoi NAD oknem wydruku, a nie pod nim.
+
+        Pod spodem gubil sie dwa razy: raz przez to, ze wyglada jak stopka panelu,
+        a drugi raz przez to, ze w terminalu zadokowanym pod plytka wydruk spycha
+        go poza widoczny obszar. A to jedyne miejsce, z ktorego da sie cokolwiek
+        wyslac do plytki - i wiekszosc programow odzywa sie DOPIERO w odpowiedzi
+        na wyslany znak, wiec bez niego okno zostaje puste.
+
+        Ramka w kolorze akcentu, znak zachety i wlasny podpis sa z tego samego
+        powodu: wczesniej byl to zwykly pasek w kolorze reszty panelu i ginal.
       */}
       <form
         className="terminal-input"
@@ -190,6 +242,12 @@ export function TerminalView({ compact = false }: Props = {}) {
           </button>
         </div>
       </form>
+
+      <pre className="terminal-output" ref={outputRef}>
+        {echoed.length === 0
+          ? text || <EmptyHint powered={simulator.powered} />
+          : renderWithEcho(received, echoed, hexMode)}
+      </pre>
     </div>
   )
 }
@@ -208,7 +266,7 @@ function EmptyHint({ powered }: { powered: boolean }) {
       Płytka nic jeszcze nie nadała.
       {'\n\n'}
       {powered
-        ? 'Wiele programów odzywa się dopiero w odpowiedzi na znak z terminala — wpisz coś w polu na dole i naciśnij Enter.'
+        ? 'Wiele programów odzywa się dopiero w odpowiedzi na znak z terminala — wpisz coś w polu „Wyślij do płytki” nad tym oknem i naciśnij Enter.'
         : 'Najpierw włącz zasilanie płytki.'}
       {'\n'}
       Klawiatura 4×4 na płytce nie wysyła nic do terminala — czyta ją program, a nie łącze szeregowe.

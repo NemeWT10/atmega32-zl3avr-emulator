@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSimulator, useSimulatorEvents } from '../sim/SimulationContext'
 import { describeWiring } from '@zl3avr/board'
 import { analyse, type Diagnostic } from '../ide/diagnostics'
+import { stripComments } from '../ide/strip-comments'
+import { setProjectSources } from '../ide/monaco-avr'
+import { copyToClipboard } from '../clipboard'
 import type { CompilerDiagnostic } from '../ide/toolchain'
 import {
   Project,
@@ -24,7 +27,9 @@ import {
  *   - LISTE PROBLEMOW z wyjasnieniem, co jest nie tak i jak to naprawic,
  *   - OSTRZEZENIA ZALEZNE OD SPRZETU: jesli kod korzysta z odbioru przez
  *     USART, a zworka JP4 jest rozwarta, edytor mowi o tym od razu.
- *     Zaden kompilator tego nie zrobi, bo nie wie, jak ustawiona jest plytka.
+ *     Zaden kompilator tego nie zrobi, bo nie wie, jak ustawiona jest plytka,
+ *   - SKOK DO DEFINICJI wlasnej funkcji albo zmiennej, takze do innego pliku,
+ *   - PODGLAD BEZ KOMENTARZY do skopiowania kodu gdzie indziej.
  */
 
 interface Props {
@@ -56,6 +61,39 @@ const SEVERITY_LABEL: Record<Diagnostic['severity'], string> = {
 interface Problem extends Diagnostic {
   /** `null` = komunikat nie dotyczy konkretnego pliku (np. blad konsolidacji). */
   path: string | null
+}
+
+/** Miejsce w projekcie, do ktorego edytor ma przewinac po przelaczeniu pliku. */
+interface Place {
+  path: string
+  line: number
+  column: number
+}
+
+/**
+ * Polska odmiana rzeczownika po liczbie: 1 komentarz, 2 komentarze, 5 komentarzy.
+ * Bez tego podglad pisalby „usunieto 2 komentarzy", co czyta sie jak usterka.
+ */
+function odmiana(count: number, forms: [string, string, string]): string {
+  if (count === 1) return forms[0]
+  const last = count % 10
+  const twoLast = count % 100
+  if (last >= 2 && last <= 4 && (twoLast < 12 || twoLast > 14)) return forms[1]
+  return forms[2]
+}
+
+/**
+ * Poczatek miejsca, do ktorego prowadzi skok. Monaco podaje raz zakres
+ * (od-do), a raz sama pozycje - obie postacie sprowadzamy do jednej.
+ */
+function startOf(
+  target: Monaco.IRange | Monaco.IPosition | undefined,
+): { line: number; column: number } {
+  if (!target) return { line: 1, column: 1 }
+  if ('startLineNumber' in target) {
+    return { line: target.startLineNumber, column: target.startColumn }
+  }
+  return { line: target.lineNumber, column: target.column }
 }
 
 /**
@@ -90,6 +128,19 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
   const newNameRef = useRef<HTMLInputElement>(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(true)
   const [message, setMessage] = useState<string | null>(null)
+  /**
+   * Podglad kodu BEZ KOMENTARZY.
+   *
+   * Nie wycinamy komentarzy z pliku - to byloby nieodwracalne zniszczenie pracy.
+   * Zamiast tego pokazujemy osobny, TYLKO DO ODCZYTU dokument obok tego samego
+   * projektu. Plik zostaje nietkniety, a student dostaje to, po co siegnal:
+   * czysty kod do skopiowania do Microchip Studio albo do sprawozdania.
+   */
+  const [hideComments, setHideComments] = useState(false)
+  const [copied, setCopied] = useState(false)
+  /** Miejsca, z ktorych skoczono do definicji - zeby dalo sie wrocic. */
+  const jumpHistory = useRef<Place[]>([])
+  const [canGoBack, setCanGoBack] = useState(false)
 
   // Komunikat o operacji na plikach znika sam - inaczej wisi do konca sesji
   // i po chwili nie wiadomo, czego dotyczyl.
@@ -110,8 +161,10 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
   const resizing = useRef(false)
   const paneRef = useRef<HTMLDivElement>(null)
 
-  /** Problem, do ktorego trzeba przewinac zaraz po otwarciu innego pliku. */
-  const pendingJump = useRef<Problem | null>(null)
+  /** Miejsce, do ktorego trzeba przewinac zaraz po otwarciu innego pliku. */
+  const pendingJump = useRef<Place | null>(null)
+  /** Uchwyt do wyrejestrowania obslugi skokow miedzy plikami. */
+  const openerRef = useRef<Monaco.IDisposable | null>(null)
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
   const monacoRef = useRef<typeof Monaco | null>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
@@ -139,8 +192,37 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
     [files, activePath],
   )
 
+  /*
+    Podpowiedzi, dymki i skok do definicji musza widziec CALY projekt, nie tylko
+    otwarty plik. Sterownik klawiatury czy wyswietlacza siedzi zwykle w osobnym
+    pliku i to wlasnie jego funkcje wola sie najczesciej - a dostawcy sa
+    rejestrowani raz, przy starcie aplikacji, wiec dostaja tu funkcje siegajaca
+    po AKTUALNA liste plikow.
+  */
+  useEffect(() => {
+    setProjectSources(() => project.list())
+    return () => setProjectSources(() => [])
+  }, [project])
+
+  /**
+   * Najswiezsze wartosci dla obslugi zdarzen, ktore Monaco trzyma od chwili
+   * rejestracji. Bez tego skok do definicji przelaczalby na plik otwarty
+   * w chwili zaladowania edytora, a nie na biezacy.
+   */
+  const latest = useRef({ activePath, onSelectFile, project })
+  latest.current = { activePath, onSelectFile, project }
+
   /** Tresc pobierana wprost z magazynu - zawsze aktualna, bez posrednictwa stanu. */
   const initialContent = active ? (project.read(active.path)?.content ?? '') : ''
+
+  /**
+   * Kod bez komentarzy liczymy TYLKO wtedy, gdy podglad jest wlaczony -
+   * inaczej przelatywalby przez caly plik przy kazdym nacisnieciu klawisza.
+   */
+  const cleaned = useMemo(() => {
+    if (!hideComments || !active) return { code: '', removedLines: 0, removedComments: 0 }
+    return stripComments(initialContent, languageOf(active.path) === 'python' ? 'python' : 'c')
+  }, [hideComments, initialContent, active])
 
   /**
    * Kontekst sprzetowy dla analizy kodu. Bierzemy go z zywego modelu plytki,
@@ -218,9 +300,83 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
     if (active) refreshDiagnostics(project.read(active.path)?.content ?? '')
   }, [active, project, refreshDiagnostics])
 
+  /** Zapamietuje miejsce, z ktorego nastapil skok - zeby dalo sie do niego wrocic. */
+  const rememberJump = (place: Place) => {
+    const stack = jumpHistory.current
+    const top = stack[stack.length - 1]
+    if (top && top.path === place.path && top.line === place.line) return
+    stack.push(place)
+    if (stack.length > 30) stack.shift()
+    setCanGoBack(true)
+  }
+
+  /** Powrot tam, skad skoczono do definicji. */
+  const goBack = () => {
+    const place = jumpHistory.current.pop()
+    setCanGoBack(jumpHistory.current.length > 0)
+    if (!place) return
+    setHideComments(false)
+    if (place.path !== latest.current.activePath) {
+      pendingJump.current = place
+      latest.current.onSelectFile(place.path)
+      return
+    }
+    const editor = editorRef.current
+    if (!editor) return
+    editor.revealLineInCenter(place.line)
+    editor.setPosition({ lineNumber: place.line, column: place.column })
+    editor.focus()
+  }
+
+  /*
+    Skok do definicji lezacej w INNYM pliku projektu.
+
+    Monaco samo potrafi przewinac do miejsca w otwartym dokumencie, ale nie ma
+    pojecia o zakladkach plikow - to nasza sprawa. `registerEditorOpener` jest
+    wolane przy kazdym „przejdz do definicji": gdy cel jest w tym samym pliku,
+    oddajemy sprawe Monaco (`false`), a gdy w innym - przelaczamy zakladke
+    i zostawiamy sobie miejsce do przewiniecia po jej zaladowaniu.
+  */
+  const registerOpener = (monaco: typeof Monaco) => {
+    if (openerRef.current) return
+    openerRef.current = monaco.editor.registerEditorOpener({
+      openCodeEditor(source, resource, selectionOrPosition) {
+        const model = source.getModel()
+        const from = source.getPosition()
+        if (model && from) {
+          rememberJump({
+            path: model.uri.path.replace(/^\//, ''),
+            line: from.lineNumber,
+            column: from.column,
+          })
+        }
+        if (model && model.uri.toString() === resource.toString()) return false
+
+        const path = resource.path.replace(/^\//, '')
+        if (!latest.current.project.read(path)) return false
+
+        pendingJump.current = { path, ...startOf(selectionOrPosition) }
+        latest.current.onSelectFile(path)
+        return true
+      },
+    })
+  }
+
+  // Obsluga skokow jest globalna dla Monaco, wiec musi zniknac razem z widokiem.
+  useEffect(
+    () => () => {
+      openerRef.current?.dispose()
+      openerRef.current = null
+    },
+    [],
+  )
+
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor
     monacoRef.current = monaco
+    registerOpener(monaco)
+    // Alt + strzalka w lewo to ten sam skrot, co powrot w VS Code i w przegladarce.
+    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow, goBack)
     if (active) refreshDiagnostics(project.read(active.path)?.content ?? '')
 
     const jump = pendingJump.current
@@ -364,8 +520,21 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
    * na zepsuty interfejs.
    */
   const jumpTo = (problem: Problem) => {
+    const place: Place = {
+      path: problem.path ?? active?.path ?? '',
+      line: problem.line,
+      column: problem.column,
+    }
+    // W podgladzie bez komentarzy numery linii sa inne, a dokumentu nie da sie
+    // edytowac - wracamy wiec do zwyklego edytora i przewijamy juz w nim.
+    if (hideComments) {
+      setHideComments(false)
+      pendingJump.current = place
+      if (place.path !== active?.path) onSelectFile(place.path)
+      return
+    }
     if (problem.path && problem.path !== active?.path) {
-      pendingJump.current = problem
+      pendingJump.current = place
       onSelectFile(problem.path)
       return
     }
@@ -402,6 +571,22 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
     ],
     [compilerItems, ownDiagnostics, active],
   )
+
+  /**
+   * Podglad bez komentarzy jest OSOBNYM dokumentem, tylko do odczytu. Kiedy jest
+   * wlaczony, zwykly edytor znika razem ze swoim modelem - a wtedy uchwyt do
+   * niego nie moze zostac, bo pozniejszy skok do problemu trafilby w nicosc.
+   */
+  useEffect(() => {
+    if (hideComments) editorRef.current = null
+  }, [hideComments])
+
+  const copyClean = async () => {
+    const ok = await copyToClipboard(cleaned.code)
+    setCopied(ok)
+    if (!ok) setMessage('Nie udało się użyć schowka. Zaznacz kod w podglądzie i naciśnij Ctrl + C.')
+    setTimeout(() => setCopied(false), 3000)
+  }
 
   const errorCount = diagnostics.filter((item) => item.severity === 'error').length
   const warningCount = diagnostics.filter((item) => item.severity === 'warning').length
@@ -560,6 +745,8 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
             <>
               <dl>
                 <dt>Ctrl + Spacja</dt><dd>podpowiedzi</dd>
+                <dt>Ctrl + klik</dt><dd>przejdź do definicji</dd>
+                <dt>Alt + ←</dt><dd>wróć po skoku</dd>
                 <dt>Ctrl + F / H</dt><dd>szukaj / zamień</dd>
                 <dt>Ctrl + /</dt><dd>zakomentuj linię</dd>
                 <dt>Alt + ↑ / ↓</dt><dd>przenieś linię</dd>
@@ -569,9 +756,33 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
                 <dt>F7</dt><dd>zbuduj i wgraj</dd>
                 <dt>F5</dt><dd>pauza / wznów</dd>
               </dl>
-              <p className="shortcuts-note">
-                Najedź kursorem na nazwę rejestru albo bitu, żeby zobaczyć, czym jest i po co służy.
-              </p>
+
+              {/*
+                Dymki sa najwieksza czescia wiedzy w tym narzedziu, a jednoczesnie
+                jedyna, ktora sama sie nie pokazuje - trzeba wiedziec, ze warto
+                najechac. Dlatego zamiast jednego zdania na szarym tle jest tu
+                wyliczenie: co konkretnie odpowie, kiedy sie na nie najedzie.
+              */}
+              <div className="tip-card">
+                <strong>Najedź kursorem — prawie wszystko tu coś opowiada</strong>
+                <ul>
+                  <li>
+                    <b>nazwa rejestru albo bitu</b> (<code>UCSRC</code>, <code>OCIE1A</code>) —
+                    czym jest, po co się jej używa i na co uważać;
+                  </li>
+                  <li>
+                    <b>własna funkcja, zmienna lub argument</b> — jej deklaracja i plik,
+                    w którym powstała;
+                  </li>
+                  <li>
+                    <b>zakładki u góry, przyciski i pola wyboru</b> — po co są i kiedy się przydają.
+                  </li>
+                </ul>
+                <p>
+                  Przytrzymaj <b>Ctrl</b>: własne nazwy zmienią się w odsyłacze i kliknięcie
+                  przeniesie do miejsca, w którym je zadeklarowano.
+                </p>
+              </div>
             </>
           )}
         </div>
@@ -580,32 +791,121 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
       <div className="editor-pane" ref={paneRef}>
         <div className="editor-tabs">
           <div className="tab active">{active?.path ?? '—'}</div>
+
+          {canGoBack && (
+            <button
+              className="editor-back"
+              onClick={goBack}
+              title="Wróć tam, skąd nastąpił skok do definicji (Alt + ←)"
+            >
+              ← wróć
+            </button>
+          )}
+
+          <span className="spacer" />
+
+          {/*
+            Przelacznik jest CELOWO duzy i podpisany stanem („WŁ." / „WYŁ.").
+            Zwykly kwadracik pola wyboru w pasku nad edytorem ginie - a to jedyne
+            miejsce, w ktorym da sie o tej mozliwosci dowiedziec.
+          */}
+          <label
+            className={'switch' + (hideComments ? ' on' : '')}
+            title={
+              'Pokazuje ten sam kod bez komentarzy — do skopiowania do Microchip Studio ' +
+              'albo do sprawozdania. Plik zostaje nietknięty, komentarze wracają po wyłączeniu.'
+            }
+          >
+            <input
+              type="checkbox"
+              checked={hideComments}
+              onChange={(event) => setHideComments(event.target.checked)}
+            />
+            <span className="switch-track" aria-hidden="true">
+              <span className="switch-knob" />
+            </span>
+            <span className="switch-text">Bez komentarzy</span>
+            <span className="switch-state">{hideComments ? 'WŁ.' : 'WYŁ.'}</span>
+          </label>
         </div>
 
-        {active && (
-          <Editor
-            key={active.path}
-            theme="vs-dark"
-            path={active.path}
-            language={languageOf(active.path)}
-            defaultValue={initialContent}
-            onMount={handleMount}
-            onChange={handleChange}
-            options={{
-              fontFamily: "Consolas, 'Courier New', monospace",
-              fontSize: 14,
-              minimap: { enabled: true },
-              tabSize: 4,
-              renderWhitespace: 'selection',
-              automaticLayout: true,
-              scrollBeyondLastLine: false,
-              quickSuggestions: { other: true, comments: false, strings: false },
-              suggestOnTriggerCharacters: true,
-              bracketPairColorization: { enabled: true },
-              padding: { top: 10 },
-            }}
-          />
-        )}
+        <div className={'editor-area' + (hideComments ? ' with-bar' : '')}>
+          {hideComments && (
+            <div className="preview-bar">
+              <strong>Podgląd bez komentarzy</strong>
+              <span>
+                {cleaned.removedComments > 0
+                  ? `Ukryto ${cleaned.removedComments} ${odmiana(cleaned.removedComments, [
+                      'komentarz',
+                      'komentarze',
+                      'komentarzy',
+                    ])} — kod jest krótszy o ${cleaned.removedLines} ${odmiana(cleaned.removedLines, [
+                      'linię',
+                      'linie',
+                      'linii',
+                    ])}.`
+                  : 'W tym pliku nie ma komentarzy — kod wygląda tak samo.'}{' '}
+                Plik na dysku jest nietknięty; wyłącz przełącznik, żeby wrócić do pisania.
+              </span>
+              <span className="spacer" />
+              <button className="primary" onClick={() => void copyClean()}>
+                {copied ? 'Skopiowano ✓' : 'Kopiuj kod'}
+              </button>
+            </div>
+          )}
+
+          {active && !hideComments && (
+            <Editor
+              key={active.path}
+              theme="vs-dark"
+              path={active.path}
+              language={languageOf(active.path)}
+              defaultValue={initialContent}
+              onMount={handleMount}
+              onChange={handleChange}
+              options={{
+                fontFamily: "Consolas, 'Courier New', monospace",
+                fontSize: 14,
+                minimap: { enabled: true },
+                tabSize: 4,
+                renderWhitespace: 'selection',
+                automaticLayout: true,
+                scrollBeyondLastLine: false,
+                quickSuggestions: { other: true, comments: false, strings: false },
+                suggestOnTriggerCharacters: true,
+                bracketPairColorization: { enabled: true },
+                padding: { top: 10 },
+              }}
+            />
+          )}
+
+          {/*
+            Podglad ma WLASNA sciezke dokumentu. Gdyby dzielil ja z plikiem,
+            Monaco podmienialoby tresc tego samego modelu - i kod bez komentarzy
+            trafilby do projektu, kasujac je nieodwracalnie.
+          */}
+          {active && hideComments && (
+            <Editor
+              key={'podglad:' + active.path}
+              theme="vs-dark"
+              path={'bez-komentarzy/' + active.path}
+              language={languageOf(active.path)}
+              value={cleaned.code}
+              options={{
+                fontFamily: "Consolas, 'Courier New', monospace",
+                fontSize: 14,
+                readOnly: true,
+                domReadOnly: true,
+                minimap: { enabled: true },
+                tabSize: 4,
+                automaticLayout: true,
+                scrollBeyondLastLine: false,
+                bracketPairColorization: { enabled: true },
+                padding: { top: 10 },
+              }}
+            />
+          )}
+        </div>
 
         <div
           className="problems"

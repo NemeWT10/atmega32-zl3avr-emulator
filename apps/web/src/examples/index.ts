@@ -7,6 +7,20 @@
  * porownac wlasny program.
  */
 
+/*
+  Pusty projekt startowy. Lezy poza katalogami `src/` i `hex/`, bo w odroznieniu
+  od cwiczen jest w calosci napisany na potrzeby tego narzedzia - i tylko dlatego
+  moze byc objety licencja MIT razem z reszta kodu (patrz LICENSE, punkt 2).
+
+  Jego plik HEX zlozono recznie z czterech instrukcji (LDI, dwa OUT i RJMP
+  w petli), a nie avr-gcc jak pozostale przyklady: program jest na tyle maly,
+  ze da sie go zapisac wprost, a dzieki temu pusty projekt startuje takze wtedy,
+  gdy zadnego kompilatora nie ma pod reka. Test `starter-example.test.ts`
+  sprawdza w symulatorze, ze zapala wszystkie osiem diod.
+*/
+import starterHex from './start/start_leds.hex?raw'
+import starterSource from './start/main.c?raw'
+
 import lab1 from './hex/lab1_gpio_led.hex?raw'
 import lab2 from './hex/lab2_keypad.hex?raw'
 import lab3 from './hex/lab3_7seg.hex?raw'
@@ -51,8 +65,14 @@ const QUEUE: ProjectFile[] = [
   { path: 'queue.h', content: queueHeader },
 ]
 
+/**
+ * Pusty projekt startowy. Ma wlasny identyfikator, bo poza lista wyboru
+ * siega po niego takze przycisk w pasku narzedzi.
+ */
+export const STARTER_ID = 'start'
+
 /** Skad pochodzi przyklad - pozwala pogrupowac liste wyboru. */
-export type ExampleGroup = 'Technika mikroprocesorowa' | 'Systemy wbudowane'
+export type ExampleGroup = 'Start' | 'Technika mikroprocesorowa' | 'Systemy wbudowane'
 
 export interface Example {
   id: string
@@ -75,6 +95,17 @@ export interface Example {
 }
 
 export const EXAMPLES: Example[] = [
+  {
+    id: STARTER_ID,
+    group: 'Start',
+    label: 'Pusty projekt — diody na porcie A',
+    description:
+      'Czysta kartka do własnego programu: port A jest już połączony z diodami, a wszystkie osiem świeci.',
+    hex: starterHex,
+    preset: 'start',
+    files: [{ path: 'main.c', content: starterSource }],
+    note: 'Przewody i diody są gotowe — pisz wewnątrz pętli while (1) i naciśnij „Zbuduj i wgraj” (F7).',
+  },
   {
     id: 'lab1',
     group: 'Technika mikroprocesorowa',

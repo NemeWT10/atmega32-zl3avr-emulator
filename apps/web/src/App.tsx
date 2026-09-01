@@ -7,7 +7,7 @@ import { TerminalView } from './views/TerminalView'
 import { GuideView } from './views/GuideView'
 import { PcView } from './views/PcView'
 import { FuseDialog } from './components/FuseDialog'
-import { EXAMPLES, type Example, type ExampleGroup } from './examples'
+import { EXAMPLES, STARTER_ID, type Example, type ExampleGroup } from './examples'
 import { demoProject } from './project/demoProject'
 import { Project, downloadProject } from './ide/project'
 import {
@@ -28,22 +28,48 @@ import {
 } from './workspace'
 import { Atmega32 } from '@zl3avr/avr-core'
 import { Board } from '@zl3avr/board'
+import { copyToClipboard } from './clipboard'
 
 /**
  * Przyklady pogrupowane wedlug przedmiotu, z ktorego pochodza.
  * Plaska lista kilkunastu pozycji przestala byc czytelna.
  */
 const EXAMPLE_GROUPS: [ExampleGroup, Example[]][] = (
-  ['Technika mikroprocesorowa', 'Systemy wbudowane'] as ExampleGroup[]
+  ['Start', 'Technika mikroprocesorowa', 'Systemy wbudowane'] as ExampleGroup[]
 ).map((group) => [group, EXAMPLES.filter((example) => example.group === group)])
+
+/** Pusty projekt startowy - siega po niego takze przycisk w pasku narzedzi. */
+const STARTER = EXAMPLES.find((example) => example.id === STARTER_ID)!
 
 type ViewId = 'ide' | 'board' | 'simulator' | 'terminal' | 'pc' | 'guide'
 
+/*
+  Kazda zakladka ma krotki opis pokazywany po najechaniu. Same nazwy nic nie
+  mowia komus, kto widzi mikrokontroler pierwszy raz: „Symulator" i „Terminal
+  USART" brzmia wtedy tak samo obco. Jedno zdanie wystarczy, zeby wiedziec,
+  czego tam szukac - i zeby nie klikac na chybil trafil.
+*/
 const VIEWS: { id: ViewId; label: string; title?: string }[] = [
-  { id: 'ide', label: 'IDE' },
-  { id: 'board', label: 'Płytka' },
-  { id: 'simulator', label: 'Symulator' },
-  { id: 'terminal', label: 'Terminal USART' },
+  {
+    id: 'ide',
+    label: 'IDE',
+    title: 'Pisanie programu w języku C: pliki projektu, podpowiedzi i lista problemów z wyjaśnieniami',
+  },
+  {
+    id: 'board',
+    label: 'Płytka',
+    title: 'Wirtualny zestaw ZL3AVR: przewody, zworki, diody, wyświetlacze i klawiatura 4×4',
+  },
+  {
+    id: 'simulator',
+    label: 'Symulator',
+    title: 'Wnętrze mikrokontrolera: rejestry rozłożone na nazwane bity i krokowanie po instrukcjach',
+  },
+  {
+    id: 'terminal',
+    label: 'Terminal USART',
+    title: 'Okno terminala na komputerze połączonym z płytką kablem szeregowym (jak PuTTY na zajęciach)',
+  },
   // Komputer stojacy obok plytki. Bez niego cwiczenie z ramkami dwojkowymi jest
   // polowa zadania: widac bajty, ale nie widac, co znacza.
   {
@@ -55,35 +81,6 @@ const VIEWS: { id: ViewId; label: string; title?: string }[] = [
   // a potem juz nie zaglada. Tresc pochodzi wprost z README.
   { id: 'guide', label: 'README', title: 'Poradnik: od czego zacząć, jak prowadzić przewody, jak oglądać płytkę' },
 ]
-
-/**
- * Kopiowanie tekstu do schowka - dwoma drogami.
- *
- * Nowoczesne `navigator.clipboard` wymaga bezpiecznego polaczenia i zgody,
- * a odmawia takze wtedy, gdy okno nie ma w danej chwili skupienia. Starsze
- * `execCommand` nie potrzebuje niczego z tych rzeczy, wiec zostaje jako zapas.
- */
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    // spróbujemy starszą drogą
-  }
-  try {
-    const area = document.createElement('textarea')
-    area.value = text
-    area.style.position = 'fixed'
-    area.style.opacity = '0'
-    document.body.append(area)
-    area.select()
-    const copied = document.execCommand('copy')
-    area.remove()
-    return copied
-  } catch {
-    return false
-  }
-}
 
 export function App() {
   const simulator = useSimulator()
@@ -422,6 +419,18 @@ export function App() {
           </select>
         </label>
 
+        {/*
+          Osobny przycisk, choc ten sam wpis jest tez na liscie przykladow.
+          Pusty projekt to nie „jeszcze jedno cwiczenie do obejrzenia", tylko
+          poczatek wlasnej pracy - a tego nie szuka sie w liscie gotowych rozwiazan.
+        */}
+        <button
+          onClick={() => setPendingExample(STARTER)}
+          title="Czysta kartka: port A połączony z diodami, wszystkie osiem świeci, a w edytorze zostaje sam szkielet programu"
+        >
+          Pusty projekt
+        </button>
+
         <button onClick={() => hexInputRef.current?.click()} title="Wgraj gotowy plik .hex zbudowany gdzie indziej">
           Wgraj .hex
         </button>
@@ -578,13 +587,21 @@ export function App() {
         <div className="modal-backdrop" onClick={() => setPendingExample(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <strong>Wczytać przykład „{pendingExample.label}”?</strong>
+              <strong>
+                {pendingExample.id === STARTER_ID
+                  ? 'Zacząć od pustego projektu?'
+                  : `Wczytać przykład „${pendingExample.label}”?`}
+              </strong>
             </div>
 
             <div className="modal-body">
               <p>
-                Do edytora trafi kod źródłowy przykładu, a do mikrokontrolera gotowy program.
-                Ustawione zostaną też przewody potrzebne temu ćwiczeniu.
+                {pendingExample.id === STARTER_ID
+                  ? 'W edytorze zostanie sam szkielet programu, przewody połączą port A z diodami, ' +
+                    'a wszystkie osiem diod zapali się od razu — dzięki temu od pierwszej chwili widać, ' +
+                    'że płytka działa.'
+                  : 'Do edytora trafi kod źródłowy przykładu, a do mikrokontrolera gotowy program. ' +
+                    'Ustawione zostaną też przewody potrzebne temu ćwiczeniu.'}
               </p>
 
               <div className="warning-box">

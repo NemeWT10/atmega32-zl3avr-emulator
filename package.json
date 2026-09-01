@@ -16,9 +16,10 @@
     "preview": "npm run preview --workspace @zl3avr/web",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --build --force",
+    "typecheck": "tsc --noEmit -p packages/avr-core && tsc --noEmit -p packages/board && tsc --noEmit -p apps/web",
     "dev:web": "npm run dev --workspace @zl3avr/web",
-    "kompilator": "node tools/compile-server/server.mjs"
+    "kompilator": "node tools/compile-server/server.mjs",
+    "favicon": "node tools/make-favicon.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

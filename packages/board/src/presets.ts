@@ -74,6 +74,15 @@ function wireLcd4bit(
 
 export const PRESETS: WiringPreset[] = [
   {
+    id: 'start',
+    label: 'Pusty projekt - diody na porcie A',
+    description:
+      'Port A na linijke diod, w kolejnosci prostej: PA0 na LED0. Punkt wyjscia do wlasnego programu.',
+    apply: (board) => {
+      board.connectRibbon('JP17', 'JP22')
+    },
+  },
+  {
     id: 'l1',
     label: 'L1 - GPIO i diody LED',
     description: 'Port D na linijke diod, w odwrotnej kolejnosci: PD0 na LED7.',
