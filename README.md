@@ -38,15 +38,16 @@
 >
 > ### Czego w tym repozytorium nie ma i nie będzie
 >
-> - **skanów instrukcji laboratoryjnych** i sylabusa przedmiotu,
-> - **dokumentacji producentów** płytki i układów,
+> - **skanów instrukcji laboratoryjnych** i sylabusa przedmiotu — ani w oryginale,
+>   ani przepisanych na tekst,
+> - **dokumentacji producentów** płytki i układów — w żadnej postaci,
 > - **danych osobowych** — z kodu, dokumentacji i komunikatów interfejsu usunięto imiona,
 >   nazwiska, numery albumów i adresy e-mail, zarówno autora, jak i prowadzących.
 >
-> Materiały te są cudzą własnością w całości, więc **nie są redystrybuowane**:
-> katalog `ZASOBY/` jest w `.gitignore` (szczegóły w `ZASOBY/README.md`). Narzędzie
-> ich nie zastępuje i nie pozwala ich odtworzyć — kto chce przejść zajęcia, nadal
-> potrzebuje instrukcji od prowadzącego.
+> Materiały te są cudzą własnością w całości, więc **nie są redystrybuowane** — leżą
+> wyłącznie na komputerze autora i nie są częścią tego repozytorium. Narzędzie ich nie
+> zastępuje i nie pozwala ich odtworzyć: kto chce przejść zajęcia, nadal potrzebuje
+> instrukcji od prowadzącego.
 >
 > ### Zastrzeżenie i zgłoszenia
 >
@@ -73,9 +74,11 @@ Student uruchamia u siebie kompletne środowisko laboratoryjne: IDE + kompilator
 płytka + **ręczne łączenie kabli** + programator + fuse bity + terminal RS232 + "komputer PC"
 ze skryptem Pythona. Wykonuje 100% zadań z instrukcji L1–L9 bez fizycznego sprzętu.
 
-**Miara sukcesu (twarda):** każdy plik z `ZASOBY/*.c` uruchomiony **bez żadnych zmian** zachowuje
-się identycznie jak na fizycznej płytce — łącznie z pułapkami dydaktycznymi
-(F_CPU vs fuse, JTAGEN, URSEL, zworka JP4, ghosting multipleksu, kasowanie flag zapisem 1).
+Płytka ma zachowywać się jak prawdziwa również wtedy, gdy zachowuje się niewygodnie.
+Odwzorowane są typowe pułapki, na których traci się godziny: `F_CPU` rozjechane z zegarem
+z fuse bitów, fuse JTAGEN zabierający linie portu C, brak `URSEL` przy zapisie `UCSRC`,
+rozwarta zworka JP4 blokująca odbiór, „duchy" na wyświetlaczu przy złej kolejności
+multipleksowania, kasowanie flagi przerwania zapisem jedynki.
 
 ## Dla kogo jest to narzędzie
 
@@ -84,13 +87,6 @@ Nie zna słowa „port", nie wie, czym różni się wejście od wyjścia, nie do
 „pull-up", i nie odnajdzie się w liczącym kilkaset stron datasheecie. Wszystko, co pokazuje
 interfejs, musi być dla niego zrozumiałe bez dodatkowego tłumacza.
 
-Wynikają z tego twarde konsekwencje dla każdego tekstu w aplikacji:
-
-- pojęcie tłumaczymy **w miejscu pierwszego użycia**, krótkimi zdaniami, bez żargonu,
-- mówimy nie tylko CO to jest, ale też **PO CO** i **co się stanie, jeśli zrobi się to źle**,
-- komunikat błędu zawsze niesie **wskazówkę, jak to naprawić**, a nie samą diagnozę,
-- fałszywy alarm jest gorszy niż brak ostrzeżenia — uczy ignorowania komunikatów.
-
 **Odbiorcy dodatkowi:**
 
 - *Prowadzący zajęcia* — pokaz działania peryferiów bez rozdawania sprzętu, przygotowanie
@@ -98,13 +94,10 @@ Wynikają z tego twarde konsekwencje dla każdego tekstu w aplikacji:
 - *Osoba wracająca do AVR po latach* — szybkie przypomnienie mapy rejestrów i zachowania płytki.
 - *Ktoś, kto ma płytkę, ale nie ma jej pod ręką* — praca nad kodem w domu.
 
-**Narzędzie jest uniwersalne.** Nie należy do jednego kursu ani jednego zestawu zadań.
-Konkretne ćwiczenia pojawiają się w opisach **wyłącznie jako oznaczone przykłady zastosowań** —
-nigdy jako definicja tego, do czego dany element służy.
+Narzędzie nie należy do jednego kursu. Konkretne ćwiczenia pojawiają się w opisach
+wyłącznie jako oznaczone przykłady — nigdy jako definicja tego, do czego dany element służy.
 
 ## Kluczowe funkcjonalności
-
-### Działa dzisiaj
 
 **Wierna symulacja ATmega32**
 - pełny zestaw instrukcji AVR8 z dokładnym zliczaniem taktów zegara
@@ -115,7 +108,7 @@ nigdy jako definicja tego, do czego dany element służy.
 - wgrywanie programu z pliku Intel HEX
 
 **Płytka ZL3AVR odwzorowana z dokumentacji producenta**
-- rozmieszczenie elementów zgodne z rysunkiem 8 dokumentacji; test pilnuje, żeby nic na siebie nie nachodziło
+- rozmieszczenie elementów i proporcje wzięte z rysunków w dokumentacji producenta
 - przewody prowadzone przeciągnięciem z pinu na pin, z **fizyką** (symulacja Verleta) i stałą długością żyły
 - żyła trzymana w ręku ma **kolor i kształt gotowego przewodu**: po puszczeniu przycisku
   połączenie zaczyna dokładnie tam, gdzie skończył podgląd — bez przeskoku
@@ -135,10 +128,10 @@ nigdy jako definicja tego, do czego dany element służy.
   nie da się przytrzymać klawisza wystarczająco długo, żeby program zauważył go przy skanowaniu
 - **pomoc kontekstowa**: najechanie obrysowuje element i pokazuje krótką podpowiedź,
   kliknięcie przypina pełny opis — czym to jest, jak się tego używa i na co uważać.
-  Panel obok płytki pokazuje **wyłącznie to**; instrukcja obsługi narzędzia jest w rozdziale „Poradnik”
+  Panel obok płytki pokazuje **wyłącznie to** — instrukcja obsługi jest w rozdziale „Poradnik”
 - elementy, których typowe ćwiczenia nie używają, są **wyraźnie oznaczone** — ciekawy
   przeczyta, a ktoś, kto ma zadanie do zrobienia, wie, że może przejść dalej
-- zakładka **README** z poradnikiem obsługi — czytana wprost z tego pliku, z rozdziału „Poradnik”
+- zakładka **README** z poradnikiem obsługi, bez wychodzenia z aplikacji
 - **poruszanie się po rysunku jak po mapie**: kółko myszy przybliża dokładnie tam, gdzie
   stoi kursor (100–600%), przeciągnięcie płytki przesuwa obraz, dwuklik przybliża,
   a przycisk „cała płytka” wraca do widoku ogólnego
@@ -172,7 +165,7 @@ nigdy jako definicja tego, do czego dany element służy.
 **Dwanaście gotowych przykładów** pogrupowanych według przedmiotu
 - osiem z „Techniki mikroprocesorowej": diody, klawiatura, wyświetlacz 7-segmentowy,
   timery, przerwania, USART, ramki binarne, wyświetlacz tekstowy
-- cztery z „Systemów wbudowanych" (`ZASOBY/SYSTEMY_WBUDOWANE_AVR/`): sterownik klawiatury
+- cztery z „Systemów wbudowanych": sterownik klawiatury
   z portem wybieranym parametrem, wyświetlacz sterowany wskaźnikami do rejestrów,
   własne znaki CGRAM przy nietypowym podłączeniu, USART i licznik pracujące jednocześnie
 - wczytanie przykładu ustawia **wszystko naraz i w jednym miejscu**: kod źródłowy
@@ -232,16 +225,6 @@ nigdy jako definicja tego, do czego dany element służy.
 
 **Okno fuse bitów** wzorowane na „Device Programming → Fuses" z Microchip Studio,
 z ostrzeżeniami o skutkach wybranych ustawień.
-
-### W planie
-
-- wersja desktopowa z prawdziwym avr-gcc
-- tryb zadań z listą kroków do wykonania
-- pułapka na wieczór: **debugger na poziomie C** (pułapki w edytorze, podgląd zmiennych)
-
----
-
----
 
 ## Poradnik — jak używać narzędzia
 
@@ -386,115 +369,25 @@ jeden do jednego, zgodnie z nadrukiem:
 
 ---
 
-## Jak uruchomić
+## Uruchomienie u siebie
+
+Narzędzie działa w przeglądarce i normalnie wystarczy otworzyć adres, pod którym jest
+wystawione. Żeby uruchomić je z kodu:
 
 ```bash
 npm install
 npm run dev
 ```
 
-`npm run dev` kopiuje środowisko Pythona do katalogu wydawanego ze stroną i startuje
-**dwa** procesy: aplikację na `http://localhost:5173` oraz serwer kompilacji na porcie 5174.
-Można je uruchamiać osobno: `npm run dev:web` i `npm run kompilator`.
+Aplikacja stanie na `http://localhost:5173`.
 
-### Kompilator
+Jedna rzecz wymaga przygotowania osobno: **kompilator C działający w przeglądarce**.
+To clang, lld i llvm-objcopy zbudowane do WebAssembly — budowa jest jednorazowa, ale trwa
+godziny i wymaga Dockera. Przepis leży w `tools/wasm-toolchain/`.
 
-Są dwa zaplecza i wybierają się same:
-
-1. **serwerowy avr-gcc** (`tools/compile-server`) — jeśli odpowiada, wygrywa, bo to
-   dokładnie ten sam kompilator co w Microchip Studio. Szuka `avr-gcc` w systemie,
-   a gdy go nie ma — w obrazie kontenera:
-   ```bash
-   docker build -t zl3avr-toolchain tools/avr-docker
-   ```
-2. **clang w przeglądarce** — działa bez żadnego serwera. Wymaga jednorazowego
-   przygotowania artefaktów (patrz niżej).
-
-Wymuszenie konkretnego zaplecza: `?kompilator=przegladarka` albo `?kompilator=serwer`
-w adresie. Pasek stanu zawsze mówi, który pracuje.
-
-### Kompilator w przeglądarce — jednorazowe przygotowanie
-
-Budowa LLVM-a trwa **godziny** i wykonuje się raz:
-
-```bash
-docker build -t zl3avr-wasm-toolchain-base tools/wasm-toolchain
-docker build -f tools/wasm-toolchain/Dockerfile.avr-fixes -t zl3avr-wasm-toolchain tools/wasm-toolchain
-bash tools/wasm-toolchain/extract.sh
-```
-
-Drugi krok nakłada poprawkę błędu lld dotyczącego skoków warunkowych na AVR
-i przebudowuje sam linker — minuty, nie godziny. `extract.sh` wyciąga z obrazów
-62 MB artefaktów do `apps/web/public/toolchain/`; nie trafiają one do repozytorium.
-
-Bez tego kroku aplikacja nadal działa: można oglądać gotowe przykłady, wgrywać własne
-pliki `.hex` i budować przez serwer. Pasek u góry mówi wtedy wprost, czego brakuje.
-
-### Python w przeglądarce
-
-`node tools/copy-pyodide.mjs` (robi to `npm run dev` i `npm run build`) kopiuje 13 MB
-środowiska Pythona z `node_modules`. Zakładka „Komputer PC" potrzebuje **izolacji między
-źródłami** — bez niej nie ma `SharedArrayBuffer`, a bez niego skrypt nie ma jak poczekać
-na ramkę. Serwer deweloperski ustawia odpowiednie nagłówki sam (`vite.config.ts`).
-
-Na hostingu, który pozwala ustawić nagłówki (Vercel, Netlify, własny serwer), robi się to
-raz w konfiguracji — patrz „Wdrożenie" niżej. Sprawdzone na wersji produkcyjnej: izolacja
-włącza się z samych nagłówków i Python działa.
-
-> **Uwaga o GitHub Pages.** Tam nagłówków ustawić się nie da i dopisuje je robotnik usługowy
-> `apps/web/public/coi-serviceworker.js`. Ta ścieżka jest napisana, ale **nie została
-> sprawdzona** — środowisko, w którym powstawała, nie pozwala rejestrować robotników
-> usługowych. Kompilator działa niezależnie od izolacji, więc ewentualna usterka dotknęłaby
-> wyłącznie zakładki „Komputer PC".
-
-## Wdrożenie — żeby student tylko kliknął w link
-
-Cel jest prosty: student wchodzi na adres i **wszystko działa, bez instalowania czegokolwiek**.
-Da się to osiągnąć, ale trzeba wiedzieć o jednej rzeczy.
-
-**Kompilator (62 MB) nie leży w repozytorium** — to wynik budowy, a nie źródło, i nie da się
-go odtworzyć w chmurze, bo budowa LLVM-a trwa godziny i wymaga obrazów Dockera. Znaczy to,
-że **wdrożenie podpięte do repozytorium zbuduje aplikację bez kompilatora w przeglądarce.**
-Wysyłać trzeba gotowy katalog ze swojego komputera.
-
-### Vercel (zalecane)
-
-```bash
-npm run build
-cd apps/web/dist
-npx vercel deploy --prod
-```
-
-Wysyłamy sam katalog `dist/`, więc nie trzeba niczego commitować ani podpinać repozytorium.
-Leżący w nim `vercel.json` (powstaje z `apps/web/public/vercel.json`) ustawia dwie rzeczy:
-
-- **nagłówki izolacji** — dzięki nim Python działa bez żadnych obejść,
-- **wieczne cache'owanie** `toolchain/` i `pyodide/` — student pobiera te 75 MB raz.
-
-Przy pierwszym wdrożeniu warto sprawdzić limit rozmiaru wdrożenia na swoim planie:
-katalog ma ~80 MB, a największy pojedynczy plik 36,5 MB.
-
-### GitHub Pages
-
-Działa, ale gorzej: nagłówków nie da się ustawić, więc izolacja opiera się na robotniku
-usługowym (patrz uwaga wyżej), a katalog `dist/` trzeba wypchnąć na gałąź `gh-pages`.
-Limity nie przeszkadzają — plik do 100 MB, strona do 1 GB.
-
-### Bez kompilatora w przeglądarce
-
-Jeśli nie chcesz wysyłać 62 MB, pomiń krok `extract.sh`. Aplikacja wstanie normalnie:
-gotowe przykłady, płytka, symulator, terminal i wgrywanie własnych `.hex` działają.
-Pasek u góry powie wprost, że budowania własnego kodu nie ma.
-
----
-
-`npm run build` produkuje statyczny katalog `apps/web/dist/` (`base: './'`, brak zależności
-od CDN). Waży ~80 MB, z czego 62 MB to kompilator, a 13 MB Python — obie rzeczy pobierają
-się dopiero przy pierwszym użyciu i zostają w pamięci podręcznej przeglądarki.
-
----
-
----
+Bez tego kroku aplikacja działa normalnie: płytka, symulator, terminal, wszystkie gotowe
+przykłady i wgrywanie własnych plików `.hex`. Nie da się tylko zbudować własnego kodu —
+pasek u góry mówi o tym wprost.
 
 ## Licencja
 

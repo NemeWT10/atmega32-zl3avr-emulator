@@ -78,3 +78,6 @@ docs/
 # Instrukcja startowa asystenta - narzedzie pracy, nie czesc aplikacji.
 CLAUDE.md
 .claude/
+
+# Katalog roboczy wdrozenia (Build Output API) - powstaje przy kazdym wysylaniu.
+apps/web/.vercel/
