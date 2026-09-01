@@ -118,6 +118,9 @@ button.primary { background: var(--accent); border-color: var(--accent); }
 .ide {
   display: grid;
   grid-template-columns: 240px 1fr;
+  /* Bez jawnego wiersza siatka rosnie z zawartoscia i panel problemow
+     ucieka pod dolna krawedz okna (przyciety przez .view). */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
 
@@ -145,7 +148,7 @@ button.primary { background: var(--accent); border-color: var(--accent); }
 .filetree .item:hover { background: #2a2d2e; }
 .filetree .item.active { background: #37373d; }
 
-.editor-pane { display: grid; grid-template-rows: auto 1fr; min-width: 0; }
+.editor-pane { display: grid; grid-template-rows: auto 1fr; min-width: 0; min-height: 0; }
 .editor-tabs {
   display: flex;
   background: var(--bg-panel);
@@ -1481,14 +1484,26 @@ select, input[type='text'], input:not([type]) {
   font-weight: 600;
 }
 
-/* Uchwyt do zmiany wysokosci listy problemow. Dwuklik wraca do dopasowania. */
+/* Uchwyt do zmiany wysokosci listy problemow. Dwuklik wraca do dopasowania.
+   Stale widoczna "raczka" na srodku - bez niej nikt nie wie, ze pasek da sie
+   przeciagnac (przezroczysty pasek 6 px jest nie do odkrycia). */
 .problems-resizer {
-  height: 6px;
-  margin-top: -3px;
+  height: 8px;
+  margin-top: -4px;
   cursor: ns-resize;
   background: transparent;
 }
-.problems-resizer:hover { background: var(--accent-hover); }
+.problems-resizer::before {
+  content: '';
+  display: block;
+  width: 44px;
+  height: 4px;
+  margin: 2px auto 0;
+  border-radius: 2px;
+  background: var(--border);
+}
+.problems-resizer:hover { background: color-mix(in srgb, var(--accent-hover) 35%, transparent); }
+.problems-resizer:hover::before { background: var(--accent-hover); }
 
 /* Mapka przygasa, dopoki nie jest potrzebna - nie zaslania wtedy plytki. */
 .board-minimap { opacity: 0.55; transition: opacity 0.15s; }
@@ -1977,8 +1992,38 @@ select, input[type='text'], input:not([type]) {
   font-weight: 600;
 }
 
-.kompendium-footer {
+/* Kartkowanie rozdzialow na dole strony - dwa duze cele do klikniecia. */
+.kompendium-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 34px;
+}
+.kompendium-pager button {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 46%;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.kompendium-pager button.kompendium-pager-next { text-align: right; align-items: flex-end; }
+.kompendium-pager button:hover { border-color: var(--accent-hover); background: var(--bg-active); }
+.kompendium-pager-dir {
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.kompendium-footer {
+  margin-top: 18px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
   color: var(--fg-dim);

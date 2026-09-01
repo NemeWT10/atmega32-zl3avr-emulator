@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   CLOCK_OPTIONS,
   HFUSE_BIT,
@@ -36,6 +36,15 @@ const HIGH_FUSE_ROWS: { bit: number; name: string; hint: string }[] = [
 export function FuseDialog({ onClose }: Props) {
   const simulator = useSimulator()
   const [draft, setDraft] = useState<FuseBytes>({ ...simulator.mcu.fuses })
+
+  // Esc zamyka okno bez zapisu - tak samo jak klikniecie obok albo "Anuluj".
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   const currentClockId =
     CLOCK_OPTIONS.find(

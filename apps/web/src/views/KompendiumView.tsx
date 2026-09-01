@@ -26,6 +26,9 @@ export function KompendiumView({
 }) {
   const chapters = useMemo(() => parseChapters(kompendiumSource), [])
   const current = chapters.find((item) => item.id === chapter) ?? chapters[0]
+  const position = chapters.indexOf(current)
+  const previous = position > 0 ? chapters[position - 1] : null
+  const next = position < chapters.length - 1 ? chapters[position + 1] : null
   const pageRef = useRef<HTMLElement>(null)
 
   // Przejscie z odnosnika (pomoc plytki, dymek w edytorze) ma zaczynac
@@ -57,6 +60,28 @@ export function KompendiumView({
         {current.blocks.map((block, index) => (
           <KompendiumBlock key={index} block={block} />
         ))}
+        {/*
+          Kartkowanie na dole strony: kto doczytal rozdzial do konca, nie musi
+          wracac do spisu tresci, zeby czytac dalej.
+        */}
+        <nav className="kompendium-pager" aria-label="Sąsiednie rozdziały">
+          {previous ? (
+            <button onClick={() => onSelect(previous.id)}>
+              <span className="kompendium-pager-dir">← poprzedni</span>
+              {previous.title}
+            </button>
+          ) : (
+            <span />
+          )}
+          {next ? (
+            <button className="kompendium-pager-next" onClick={() => onSelect(next.id)}>
+              <span className="kompendium-pager-dir">następny →</span>
+              {next.title}
+            </button>
+          ) : (
+            <span />
+          )}
+        </nav>
         <footer className="kompendium-footer">
           Znalazłeś nieścisłość? Rozstrzyga karta katalogowa ATmega32 (doc2503) —
           każdą wartość z tego rozdziału można w niej sprawdzić.

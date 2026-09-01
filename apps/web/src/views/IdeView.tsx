@@ -934,7 +934,10 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
               if (!pane) return
               const rect = pane.getBoundingClientRect()
               const height = rect.bottom - event.clientY
-              setProblemsHeight(Math.max(90, Math.min(rect.height - 140, height)))
+              // Granica liczona od okna, nie od panelu - panel nie moze "uciec"
+              // pod dolna krawedz nawet gdyby uklad pozwolil mu urosnac.
+              const available = Math.min(rect.height, window.innerHeight - rect.top) - 140
+              setProblemsHeight(Math.max(90, Math.min(available, height)))
             }}
             onPointerUp={(event) => {
               resizing.current = false
@@ -944,8 +947,16 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
           />
           <div className="problems-header">
             <strong>Problemy</strong>
-            {errorCount > 0 && <span className="badge error">{errorCount} błędów</span>}
-            {warningCount > 0 && <span className="badge warning">{warningCount} ostrzeżeń</span>}
+            {errorCount > 0 && (
+              <span className="badge error">
+                {errorCount} {odmiana(errorCount, ['błąd', 'błędy', 'błędów'])}
+              </span>
+            )}
+            {warningCount > 0 && (
+              <span className="badge warning">
+                {warningCount} {odmiana(warningCount, ['ostrzeżenie', 'ostrzeżenia', 'ostrzeżeń'])}
+              </span>
+            )}
             {diagnostics.length === 0 && <span className="badge ok">nic nie znaleziono</span>}
             <span className="spacer" />
             {/*

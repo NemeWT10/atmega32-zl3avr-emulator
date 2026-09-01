@@ -143,7 +143,8 @@ wyłącznie jako oznaczone przykłady — nigdy jako definicja tego, do czego da
   Panel obok płytki pokazuje **wyłącznie to** — instrukcja obsługi jest w rozdziale „Poradnik”
 - elementy, których typowe ćwiczenia nie używają, są **wyraźnie oznaczone** — ciekawy
   przeczyta, a ktoś, kto ma zadanie do zrobienia, wie, że może przejść dalej
-- zakładka **README** z poradnikiem obsługi, bez wychodzenia z aplikacji
+- zakładka **Poradnik** z instrukcją obsługi (treść czytana wprost z tego pliku),
+  bez wychodzenia z aplikacji
 - **poruszanie się po rysunku jak po mapie**: kółko myszy przybliża dokładnie tam, gdzie
   stoi kursor (100–600%), przeciągnięcie płytki przesuwa obraz, dwuklik przybliża,
   a przycisk „cała płytka” wraca do widoku ogólnego
@@ -297,7 +298,7 @@ z ostrzeżeniami o skutkach wybranych ustawień.
 ## Poradnik — jak używać narzędzia
 
 *Ta sekcja jest dla osoby, która właśnie uruchomiła program. W aplikacji ten sam tekst
-jest w zakładce **README** — czytany wprost z tego pliku, więc nie ma dwóch wersji.*
+jest w zakładce **Poradnik** — czytany wprost z tego pliku, więc nie ma dwóch wersji.*
 
 ### Co to w ogóle jest
 
@@ -356,7 +357,8 @@ zamiast kazać ich szukać w liczącym kilkaset stron datasheecie.
   Studio albo do sprawozdania. To tylko podgląd: plik zostaje nietknięty, a komentarze
   wracają po wyłączeniu przełącznika.
 - Lista **„Problemy"** pod edytorem zbiera komunikaty kompilatora ze wszystkich plików
-  i ostrzeżenia zależne od stanu płytki. Kliknięcie w problem przenosi do jego linii.
+  i ostrzeżenia zależne od stanu płytki. Kliknięcie w problem przenosi do jego linii,
+  a uchwyt nad nagłówkiem listy zmienia jej wysokość (dwuklik wraca do dopasowania).
 - Nazwy **rejestrów i bitów mają w kodzie własne kolory**, a na liście podpowiedzi
   litery **R** i **B** mówią od razu, co jest czym. Dymek rejestru prowadzi też do
   właściwego rozdziału zakładki **Kompendium**.
@@ -372,6 +374,8 @@ wyświetlacza, zanim odświeżanie „przyspieszy".
 
 Nie trzeba tam trafiać ręcznie: opisy elementów na płytce, grupy rejestrów
 w Symulatorze i dymki w edytorze mają odnośniki wprost do właściwego rozdziału.
+Na dole każdego rozdziału są przyciski do poprzedniego i następnego — kompendium
+czyta się jak książkę, bez wracania do spisu treści.
 
 ### Kalkulator timerów
 

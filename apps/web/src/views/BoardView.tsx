@@ -426,7 +426,7 @@ export function BoardView() {
               <p className="help-note">Opis zostaje na miejscu, dopóki nie wybierzesz innego elementu.</p>
               <p className="help-note">
                 Prowadzenie przewodów, przybliżanie rysunku i sterowanie klawiaturą opisuje
-                poradnik w zakładce <strong>README</strong>.
+                zakładka <strong>Poradnik</strong>.
               </p>
             </div>
           )}

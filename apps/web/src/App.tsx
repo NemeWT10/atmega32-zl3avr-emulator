@@ -96,8 +96,9 @@ const VIEWS: { id: ViewId; label: string; title?: string }[] = [
     title: 'Teoria do ćwiczeń: porty, timery, przerwania, klawiatura, wyświetlacze i USART — krótko, z przykładami i pułapkami',
   },
   // Poradnik obslugi trzymamy na koncu: czyta sie go raz, na poczatku,
-  // a potem juz nie zaglada. Tresc pochodzi wprost z README.
-  { id: 'guide', label: 'README', title: 'Poradnik: od czego zacząć, jak prowadzić przewody, jak oglądać płytkę' },
+  // a potem juz nie zaglada. Tresc pochodzi wprost z README, ale etykieta
+  // mowi po polsku CO tu jest - slowo "README" nic studentowi nie mowi.
+  { id: 'guide', label: 'Poradnik', title: 'Poradnik: od czego zacząć, jak prowadzić przewody, jak oglądać płytkę' },
 ]
 
 export function App() {
