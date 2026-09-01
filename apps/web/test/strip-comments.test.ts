@@ -134,9 +134,15 @@ describe('przyklady dolaczone do aplikacji przezywaja usuniecie komentarzy', () 
     })
 
     it(`${file.name} — drugie przejscie nie ma juz czego usunac`, () => {
-      const clean = stripComments(file.content).code
-      expect(stripComments(clean).code).toBe(clean)
-      expect(clean.length).toBeLessThan(file.content.length)
+      const result = stripComments(file.content)
+      expect(stripComments(result.code).code).toBe(result.code)
+      if (result.removedComments > 0) {
+        expect(result.code.length).toBeLessThan(file.content.length)
+      } else {
+        // Plik bez komentarzy (pusty projekt startowy) ma przejsc NIETKNIETY -
+        // kazda roznica oznaczalaby, ze skaner zjada cos poza komentarzami.
+        expect(result.code).toBe(file.content)
+      }
     })
   }
 })
