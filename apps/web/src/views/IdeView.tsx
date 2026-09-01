@@ -121,7 +121,7 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
   const [files, setFiles] = useState<ProjectFile[]>(() => project.list())
   /** Numer podmiany projektu - zmienia sie tylko przy wczytaniu przykladu. */
   const [revision, setRevision] = useState(project.revision)
-  const [ownDiagnostics, setOwnDiagnostics] = useState<Diagnostic[]>([])
+  const [ownDiagnostics, setOwnDiagnostics] = useState<Problem[]>([])
   const [renaming, setRenaming] = useState<string | null>(null)
   /** Czy w drzewie stoi otwarty wiersz na nazwe nowego pliku. */
   const [creating, setCreating] = useState(false)
@@ -250,24 +250,37 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
   /** Analiza kodu i przelozenie wynikow na podkreslenia w edytorze. */
   const refreshDiagnostics = useCallback(
     (code: string) => {
-      if (!active || languageOf(active.path) !== 'c') {
-        setOwnDiagnostics([])
-        return
-      }
       /**
-       * Pozostale pliki projektu ida do analizy razem z otwartym.
-       * Sterownik klawiatury czy wyswietlacza siedzi zwykle w osobnym pliku,
-       * a bez niego analiza zglaszalaby "nigdzie nie ustawiasz DDRx"
-       * dla kodu, ktory ustawia to poprawnie - tylko gdzie indziej.
+       * Analizujemy WSZYSTKIE pliki C projektu, nie tylko otwarty.
+       *
+       * Program czesto siega po port w sterowniku, a nie w main - gdy analiza
+       * widziala tylko otwarty plik, ostrzezenie „z tego portu nie wychodzi
+       * zaden przewod" nie pojawialo sie wcale, dopoki student nie otworzyl
+       * akurat wlasciwego pliku. Lista problemow etykietuje wpisy nazwa pliku,
+       * a podkreslenia w edytorze dostaje tylko plik otwarty.
+       *
+       * Kazdy plik dostaje pozostale jako kontekst - sterownik klawiatury
+       * czy wyswietlacza siedzi zwykle w osobnym pliku, a bez niego analiza
+       * zglaszalaby "nigdzie nie ustawiasz DDRx" dla kodu, ktory ustawia
+       * to poprawnie - tylko gdzie indziej.
        */
-      const otherSources = project
-        .list()
-        .filter((file) => file.path !== active.path && languageOf(file.path) === 'c')
-        .map((file) => file.content)
-        .join('\n')
+      const cFiles = project.list().filter((file) => languageOf(file.path) === 'c')
+      const contentOf = (path: string, stored: string) =>
+        active && path === active.path ? code : stored
 
-      const found = analyse(code, hardware, otherSources)
-      setOwnDiagnostics(found)
+      const all: Problem[] = []
+      let activeFound: Diagnostic[] = []
+      for (const file of cFiles) {
+        const others = cFiles
+          .filter((other) => other.path !== file.path)
+          .map((other) => contentOf(other.path, other.content))
+          .join('\n')
+        const found = analyse(contentOf(file.path, file.content), hardware, others)
+        if (active && file.path === active.path) activeFound = found
+        all.push(...found.map((item) => ({ ...item, path: file.path })))
+      }
+      setOwnDiagnostics(all)
+      const found = activeFound
 
       const monaco = monacoRef.current
       const editor = editorRef.current
@@ -565,11 +578,8 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
   }, [compilerDiagnostics, files])
 
   const diagnostics: Problem[] = useMemo(
-    () => [
-      ...compilerItems,
-      ...ownDiagnostics.map((item) => ({ ...item, path: active?.path ?? null })),
-    ],
-    [compilerItems, ownDiagnostics, active],
+    () => [...compilerItems, ...ownDiagnostics],
+    [compilerItems, ownDiagnostics],
   )
 
   /**
@@ -857,7 +867,7 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
           {active && !hideComments && (
             <Editor
               key={active.path}
-              theme="vs-dark"
+              theme="zl3avr-dark"
               path={active.path}
               language={languageOf(active.path)}
               defaultValue={initialContent}
@@ -887,7 +897,7 @@ export function IdeView({ project, activePath, onSelectFile, compilerDiagnostics
           {active && hideComments && (
             <Editor
               key={'podglad:' + active.path}
-              theme="vs-dark"
+              theme="zl3avr-dark"
               path={'bez-komentarzy/' + active.path}
               language={languageOf(active.path)}
               value={cleaned.code}

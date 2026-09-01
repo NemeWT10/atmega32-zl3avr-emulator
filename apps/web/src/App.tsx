@@ -5,7 +5,10 @@ import { BoardView } from './views/BoardView'
 import { SimulatorView } from './views/SimulatorView'
 import { TerminalView } from './views/TerminalView'
 import { GuideView } from './views/GuideView'
+import { KompendiumView } from './views/KompendiumView'
+import { KalkulatorView } from './views/KalkulatorView'
 import { PcView } from './views/PcView'
+import { KOMPENDIUM_EVENT } from './kompendium/navigation'
 import { FuseDialog } from './components/FuseDialog'
 import { EXAMPLES, STARTER_ID, type Example, type ExampleGroup } from './examples'
 import { demoProject } from './project/demoProject'
@@ -41,7 +44,7 @@ const EXAMPLE_GROUPS: [ExampleGroup, Example[]][] = (
 /** Pusty projekt startowy - siega po niego takze przycisk w pasku narzedzi. */
 const STARTER = EXAMPLES.find((example) => example.id === STARTER_ID)!
 
-type ViewId = 'ide' | 'board' | 'simulator' | 'terminal' | 'pc' | 'guide'
+type ViewId = 'ide' | 'board' | 'simulator' | 'terminal' | 'pc' | 'kalkulator' | 'kompendium' | 'guide'
 
 /*
   Kazda zakladka ma krotki opis pokazywany po najechaniu. Same nazwy nic nie
@@ -77,6 +80,21 @@ const VIEWS: { id: ViewId; label: string; title?: string }[] = [
     label: 'Komputer PC',
     title: 'Skrypt w Pythonie po drugiej stronie kabla szeregowego (ćwiczenie L7 — ramki binarne)',
   },
+  // Narzedzie podreczne: przeklada "mrugaj co 100 ms" na wartosci rejestrow
+  // licznika - w obie strony (czas -> konfiguracja, OCR -> czas).
+  {
+    id: 'kalkulator',
+    label: 'Kalkulator timerów',
+    title: 'Dobór konfiguracji licznika: podaj czas, tryb, preskaler albo OCR — resztę wyliczy i da gotową funkcję',
+  },
+  // Teoria do cwiczen - rozdzialy o portach, timerach, przerwaniach itd.
+  // Pomoc na plytce, podglad rejestrow i dymki edytora LINKUJA tutaj,
+  // zamiast powielac te sama wiedze w trzech miejscach.
+  {
+    id: 'kompendium',
+    label: 'Kompendium',
+    title: 'Teoria do ćwiczeń: porty, timery, przerwania, klawiatura, wyświetlacze i USART — krótko, z przykładami i pułapkami',
+  },
   // Poradnik obslugi trzymamy na koncu: czyta sie go raz, na poczatku,
   // a potem juz nie zaglada. Tresc pochodzi wprost z README.
   { id: 'guide', label: 'README', title: 'Poradnik: od czego zacząć, jak prowadzić przewody, jak oglądać płytkę' },
@@ -92,6 +110,22 @@ export function App() {
 
   const [view, setView] = useState<ViewId>('ide')
   const [activePath, setActivePath] = useState(demoProject[0].path)
+  /** Rozdzial otwarty w kompendium - odnosniki z pomocy moga go przestawic. */
+  const [kompendiumChapter, setKompendiumChapter] = useState('bity')
+
+  /**
+   * Odnosniki „więcej w kompendium” przychodza zdarzeniem okna, bo czesc
+   * nadawcow (dymki Monaco) zyje poza drzewem komponentow Reacta.
+   */
+  useEffect(() => {
+    const open = (event: Event) => {
+      const chapter = (event as CustomEvent<{ chapter?: string }>).detail?.chapter
+      if (chapter) setKompendiumChapter(chapter)
+      setView('kompendium')
+    }
+    window.addEventListener(KOMPENDIUM_EVENT, open)
+    return () => window.removeEventListener(KOMPENDIUM_EVENT, open)
+  }, [])
   const [fuseDialogOpen, setFuseDialogOpen] = useState(false)
   const [status, setStatus] = useState('Gotowy. Napisz program i naciśnij „Zbuduj i wgraj”.')
   /**
@@ -563,6 +597,10 @@ export function App() {
         <div className="view-slot" hidden={view !== 'pc'}>
           <PcView project={project} />
         </div>
+        {view === 'kalkulator' && <KalkulatorView />}
+        {view === 'kompendium' && (
+          <KompendiumView chapter={kompendiumChapter} onSelect={setKompendiumChapter} />
+        )}
         {view === 'guide' && <GuideView />}
       </div>
 

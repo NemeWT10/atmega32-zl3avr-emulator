@@ -19,6 +19,7 @@ import {
   type Viewport,
 } from '../board-view/viewport'
 import type { BoardHelp } from '../knowledge/board-help'
+import { chapterLabel, openKompendium } from '../kompendium/navigation'
 
 /**
  * Widok plytki ZL3AVR.
@@ -402,6 +403,15 @@ export function BoardView() {
               {pinned.boxId && getBox(pinned.boxId) && (
                 <button className="help-locate" onClick={() => showOnBoard(pinned.boxId)}>
                   Pokaż na płytce
+                </button>
+              )}
+              {pinned.help.chapter && (
+                <button
+                  className="kompendium-link"
+                  onClick={() => openKompendium(pinned.help.chapter)}
+                  title="Otwiera zakładkę Kompendium na rozdziale o tym elemencie"
+                >
+                  📖 Teoria: „{chapterLabel(pinned.help.chapter)}” w Kompendium
                 </button>
               )}
             </div>

@@ -7,6 +7,7 @@ import {
   type SymbolDoc,
 } from '../knowledge/avr-symbols'
 import { useSimulator, useSimulatorEvents } from '../sim/SimulationContext'
+import { chapterLabel, openKompendium } from '../kompendium/navigation'
 
 /**
  * Podglad wnetrza mikrokontrolera.
@@ -22,12 +23,15 @@ const HEX = (value: number, digits = 2) => value.toString(16).toUpperCase().padS
 interface RegisterGroup {
   title: string
   hint: string
+  /** Rozdzial kompendium rozwijajacy temat tej grupy rejestrow. */
+  chapter?: string
   registers: { name: string; address: number }[]
 }
 
 const GROUPS: RegisterGroup[] = [
   {
     title: 'Porty wejścia/wyjścia',
+    chapter: 'porty',
     hint: 'DDR ustala kierunek, PORT wystawia wartość albo włącza pull-upy, PIN pokazuje rzeczywisty stan wyprowadzeń.',
     registers: [
       { name: 'DDRA', address: IO.DDRA }, { name: 'PORTA', address: IO.PORTA }, { name: 'PINA', address: IO.PINA },
@@ -38,6 +42,7 @@ const GROUPS: RegisterGroup[] = [
   },
   {
     title: 'Liczniki czasu',
+    chapter: 'timery',
     hint: 'TCCR konfiguruje licznik, TCNT to jego bieżąca wartość, OCR wartość porównania, TIMSK włącza przerwania, TIFR trzyma flagi.',
     registers: [
       { name: 'TCCR0', address: IO.TCCR0 }, { name: 'TCNT0', address: IO.TCNT0 }, { name: 'OCR0', address: IO.OCR0 },
@@ -49,6 +54,7 @@ const GROUPS: RegisterGroup[] = [
   },
   {
     title: 'Transmisja szeregowa',
+    chapter: 'usart',
     hint: 'UCSRA pokazuje stan, UCSRB włącza nadajnik i odbiornik, UBRRL ustala prędkość, UDR przenosi bajty.',
     registers: [
       { name: 'UDR', address: IO.UDR }, { name: 'UCSRA', address: IO.UCSRA },
@@ -57,6 +63,7 @@ const GROUPS: RegisterGroup[] = [
   },
   {
     title: 'Przerwania zewnętrzne i sterowanie',
+    chapter: 'przerwania',
     hint: 'GICR włącza przerwania zewnętrzne, MCUCR wybiera sposób ich wyzwalania, MCUCSR trzyma bit wyłączający JTAG.',
     registers: [
       { name: 'GICR', address: IO.GICR }, { name: 'GIFR', address: IO.GIFR },
@@ -155,7 +162,18 @@ export function SimulatorView() {
 
           {GROUPS.map((group) => (
             <section key={group.title}>
-              <h3>{group.title}</h3>
+              <h3>
+                {group.title}
+                {group.chapter && (
+                  <button
+                    className="kompendium-link"
+                    onClick={() => openKompendium(group.chapter)}
+                    title={`Otwiera zakładkę Kompendium na rozdziale „${chapterLabel(group.chapter)}”`}
+                  >
+                    📖 Kompendium
+                  </button>
+                )}
+              </h3>
               <p className="group-hint">{group.hint}</p>
               {group.registers.map((register) => (
                 <RegisterRow

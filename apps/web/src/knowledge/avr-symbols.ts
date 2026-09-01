@@ -482,6 +482,49 @@ const HEADER_DOCS: SymbolDoc[] = [
   },
 ]
 
+/**
+ * Typy o gwarantowanej szerokosci z <stdint.h> (avr/io.h wciaga go sam).
+ *
+ * Na mikrokontrolerze rozmiar zmiennej to nie szczegol: rejestry maja
+ * dokladnie 8 bitow, a `int` na AVR ma 16 - dlatego kod pisze sie tymi
+ * nazwami, a nie golym `int`. Opisy sa tez podstawa dymkow, bo te nazwy
+ * wygladaja na magiczne, a znacza cos bardzo prostego.
+ */
+const TYPE_DOCS: SymbolDoc[] = (
+  [
+    [8, 255n],
+    [16, 65_535n],
+    [32, 4_294_967_295n],
+    [64, 18_446_744_073_709_551_615n],
+  ] as const
+).flatMap(([bits, maxUnsigned]) => [
+  {
+    name: `uint${bits}_t`,
+    kind: 'type' as const,
+    summary: `Liczba całkowita bez znaku, ${bits} bitów: 0…${maxUnsigned.toLocaleString('pl-PL')}.`,
+    detail:
+      `Typ o gwarantowanej szerokości ${bits} bitów — na każdym kompilatorze tyle samo. ` +
+      (bits === 8
+        ? 'Dokładnie tyle, ile ma rejestr portu, dlatego to podstawowy typ w kodzie na AVR.'
+        : bits === 16
+          ? 'Tyle, ile mieści licznik TC1. Uwaga: zwykły `int` na AVR też ma 16 bitów, ale ta nazwa mówi to wprost.'
+          : 'Na 8-bitowym AVR działania na tym typie kompilator skleja z kilku instrukcji — używaj, gdy naprawdę potrzeba zakresu.'),
+    origin: '<stdint.h> (dołączany przez <avr/io.h>)',
+    example: `uint${bits}_t licznik = 0;`,
+    trap:
+      bits === 8
+        ? 'Przepełnienie jest ciche: 255 + 1 daje 0. Czasem to zaleta (licznik modulo 256), częściej niespodzianka.'
+        : undefined,
+  },
+  {
+    name: `int${bits}_t`,
+    kind: 'type' as const,
+    summary: `Liczba całkowita ze znakiem, ${bits} bitów: −${(maxUnsigned / 2n + 1n).toLocaleString('pl-PL')}…${(maxUnsigned / 2n).toLocaleString('pl-PL')}.`,
+    origin: '<stdint.h> (dołączany przez <avr/io.h>)',
+    example: `int${bits}_t roznica = -5;`,
+  },
+])
+
 export const SYMBOLS: SymbolDoc[] = [
   ...PORT_DOCS,
   ...TIMER_DOCS,
@@ -489,6 +532,7 @@ export const SYMBOLS: SymbolDoc[] = [
   ...SYSTEM_DOCS,
   ...VECTOR_DOCS,
   ...HEADER_DOCS,
+  ...TYPE_DOCS,
 ]
 
 const BY_NAME = new Map<string, SymbolDoc>()

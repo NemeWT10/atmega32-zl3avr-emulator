@@ -31,6 +31,12 @@ export type Block =
   | { kind: 'note'; inline: InlineToken[] }
   | { kind: 'list'; ordered: boolean; items: InlineToken[][] }
   | { kind: 'table'; head: InlineToken[][]; rows: InlineToken[][][] }
+  /** Blok kodu w plocie ``` - uzywany przez kompendium. */
+  | { kind: 'code'; language: string; lines: string[] }
+  /** Cytat `> ` - w kompendium ramka „pulapka / rzecz do zapamietania”. */
+  | { kind: 'callout'; inline: InlineToken[] }
+  /** Znacznik `{{demo:nazwa}}` - miejsce na animowany pokaz w aplikacji. */
+  | { kind: 'demo'; id: string }
 
 export interface GuideSection {
   /** Tytul sekcji bez numeru, np. „Poradnik — jak używać narzędzia”. */
@@ -81,6 +87,40 @@ function parseBlocks(lines: string[]): Block[] {
 
     if (trimmed === '' || trimmed === '---') {
       index++
+      continue
+    }
+
+    // Blok kodu: wszystko miedzy plotami ``` idzie do bloku BEZ rozbioru,
+    // z zachowaniem wciec - to jest kod C, nie proza.
+    if (trimmed.startsWith('```')) {
+      const language = trimmed.slice(3).trim()
+      const codeLines: string[] = []
+      index++
+      while (index < lines.length && !lines[index].trim().startsWith('```')) {
+        codeLines.push(lines[index])
+        index++
+      }
+      index++ // plot zamykajacy
+      blocks.push({ kind: 'code', language, lines: codeLines })
+      continue
+    }
+
+    // Znacznik pokazu: {{demo:klawiatura}} w osobnej linii.
+    const demo = /^\{\{demo:([a-z0-9-]+)\}\}$/.exec(trimmed)
+    if (demo) {
+      blocks.push({ kind: 'demo', id: demo[1] })
+      index++
+      continue
+    }
+
+    // Cytat `> ` - kolejne linie cytatu sklejamy w jedna ramke.
+    if (trimmed.startsWith('>')) {
+      const quoted: string[] = []
+      while (index < lines.length && lines[index].trim().startsWith('>')) {
+        quoted.push(lines[index].trim().replace(/^>\s?/, ''))
+        index++
+      }
+      blocks.push({ kind: 'callout', inline: parseInline(quoted.join(' ').trim()) })
       continue
     }
 
@@ -142,6 +182,9 @@ function parseBlocks(lines: string[]): Block[] {
         current === '---' ||
         current.startsWith('### ') ||
         current.startsWith('|') ||
+        current.startsWith('```') ||
+        current.startsWith('>') ||
+        current.startsWith('{{demo:') ||
         /^([-*]|\d+\.)\s+/.test(current)
       ) {
         break
@@ -176,6 +219,56 @@ function parseTable(rows: string[]): Block | null {
   const head = splitRow(rows[0]).map(parseInline)
   const body = rows.slice(2).map((row) => splitRow(row).map(parseInline))
   return { kind: 'table', head, rows: body }
+}
+
+// ---------------------------------------------------------------------------
+// Rozdzialy kompendium
+// ---------------------------------------------------------------------------
+
+export interface Chapter {
+  /** Staly identyfikator z naglowka `{#id}` - do odnosnikow z innych widokow. */
+  id: string
+  title: string
+  blocks: Block[]
+}
+
+/**
+ * Dzieli dokument na rozdzialy po naglowkach drugiego poziomu.
+ *
+ * Kazdy naglowek MUSI niesc jawny identyfikator: `## Tytuł {#id}`.
+ * Identyfikator jest adresem rozdzialu dla odnosnikow z pomocy plytki,
+ * podgladu rejestrow i dymkow edytora - wyliczanie go z polskiego tytulu
+ * psuloby te odnosniki przy kazdej zmianie brzmienia tytulu.
+ */
+export function parseChapters(markdown: string): Chapter[] {
+  const lines = markdown.split(/\r?\n/)
+  const chapters: Chapter[] = []
+  let current: { id: string; title: string; body: string[] } | null = null
+
+  const close = () => {
+    if (!current) return
+    chapters.push({ id: current.id, title: current.title, blocks: parseBlocks(current.body) })
+    current = null
+  }
+
+  for (const line of lines) {
+    const heading = /^##\s+(.+?)\s*\{#([a-z0-9-]+)\}\s*$/.exec(line)
+    if (heading) {
+      close()
+      current = { id: heading[2], title: heading[1].trim(), body: [] }
+      continue
+    }
+    if (line.startsWith('## ')) {
+      // Naglowek bez identyfikatora zamyka poprzedni rozdzial, ale sam nie
+      // zaczyna nowego - test kompendium pilnuje, zeby takich nie bylo.
+      close()
+      continue
+    }
+    current?.body.push(line)
+  }
+  close()
+
+  return chapters
 }
 
 /**

@@ -19,6 +19,13 @@
 
 export interface BoardHelp {
   title: string
+  /**
+   * Rozdzial kompendium, ktory rozwija temat tego elementu.
+   *
+   * Pomoc na plytce zostaje krotka (co to jest, jak uzyc, pulapka),
+   * a teoria zyje w JEDNYM miejscu - kompendium. Odnosnik zamiast kopii.
+   */
+  chapter?: string
   /** Czym element jest i po co tu jest. Dwa, trzy zdania. */
   what: string
   /** Jak sie go uzywa. Pomijamy, gdy nie ma nic konkretnego do dodania. */
@@ -48,11 +55,13 @@ const PORT_USE =
 export const BOARD_HELP: Record<string, BoardHelp> = {
   // --- zlacza portow mikrokontrolera ---
   JP17: {
+    chapter: 'porty',
     title: 'JP17 — Port A (PA0–PA7)',
     what: `${PORT_WHAT} Port A dodatkowo potrafi mierzyć napięcie, więc podłącza się do niego czujniki analogowe.`,
     use: PORT_USE,
   },
   JP16: {
+    chapter: 'porty',
     title: 'JP16 — Port B (PB0–PB7)',
     what: `${PORT_WHAT} Górnymi liniami portu B program wędruje z komputera do pamięci mikrokontrolera podczas wgrywania.`,
     use: PORT_USE,
@@ -61,6 +70,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
       'wyjście innego układu może przeszkodzić i wgrywanie się nie uda.',
   },
   JP18: {
+    chapter: 'porty',
     title: 'JP18 — Port C (PC0–PC7)',
     what: `${PORT_WHAT} Cztery środkowe linie (PC2–PC5) może zająć wbudowany układ do debugowania JTAG.`,
     use: PORT_USE,
@@ -69,6 +79,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
       'nie zapala się i nic tego nie tłumaczy. Wyłącz fuse JTAGEN w oknie fuse bitów.',
   },
   JP19: {
+    chapter: 'porty',
     title: 'JP19 — Port D (PD0–PD7)',
     what: `${PORT_WHAT} PD0 i PD1 to jednocześnie odbiór i nadawanie łącza szeregowego do komputera.`,
     use: PORT_USE,
@@ -79,6 +90,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
 
   // --- zlacza peryferiow ---
   JP22: {
+    chapter: 'porty',
     title: 'JP22 — rząd ośmiu diod',
     what:
       'Osiem diod LED, każda ze swoją szpilką. Dioda świeci, gdy na jej linii jest stan WYSOKI, ' +
@@ -89,6 +101,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
     trap: 'Kolejność żył decyduje, która dioda odpowiada któremu bitowi. Odwrócona wiązka odwraca cały efekt.',
   },
   JP23: {
+    chapter: 'klawiatura',
     title: 'JP23 — klawiatura 4×4',
     what:
       'Szesnaście przycisków w siatce czterech wierszy i czterech kolumn. Zamiast szesnastu wyprowadzeń ' +
@@ -101,6 +114,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
       'Styk po naciśnięciu przez kilkanaście milisekund drga, więc czytaj dwa razy w odstępie.',
   },
   JP24: {
+    chapter: 'wyswietlacz-7seg',
     title: 'JP24 — segmenty wyświetlacza cyfrowego',
     what:
       'Osiem linii sterujących kreskami, z których składa się cyfra: siedem segmentów a–g plus kropka. ' +
@@ -109,6 +123,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
     trap: 'Odwrotnie niż przy diodach — tu jedynka gasi, a zero zapala. Ten sam wzór da negatyw cyfry.',
   },
   JP28: {
+    chapter: 'wyswietlacz-7seg',
     title: 'JP28 — wybór aktywnej cyfry',
     what:
       'Cztery linie decydujące, która z czterech cyfr świeci. Cyfra włącza się stanem NISKIM. ' +
@@ -121,6 +136,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
       'segmentów. Kolejność musi być: zgaś cyfrę, zmień segmenty, zapal następną.',
   },
   JP29: {
+    chapter: 'lcd',
     title: 'JP29 — wyświetlacz tekstowy, sterowanie czterema liniami',
     what:
       'Sześć szpilek do wyświetlacza tekstowego: RS, E oraz cztery linie danych D4–D7. ' +
@@ -133,6 +149,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
       'wyprowadzenia dają pusty albo zaśmiecony ekran — bez żadnego komunikatu.',
   },
   JP27: {
+    chapter: 'lcd',
     title: 'JP27 — złącze, w którym siedzi wyświetlacz',
     what:
       'Szesnastostykowe złącze, w które wyświetlacz jest wetknięty na stałe: zasilanie, kontrast, ' +
@@ -144,6 +161,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
 
   // --- zworki ---
   JP3: {
+    chapter: 'klawiatura',
     title: 'JP3 — mała klawiatura',
     what:
       'Zworka, czyli zdejmowany mostek zwierający dwie szpilki. Założona redukuje klawiaturę ' +
@@ -151,6 +169,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
     use: 'Kliknij, żeby założyć albo zdjąć. Do pełnej matrycy 4×4 zworka musi być zdjęta.',
   },
   JP4: {
+    chapter: 'usart',
     title: 'JP4 — włącznik odbioru z komputera',
     what:
       'Zworka dołączająca linię odbioru RS232 do wyprowadzenia PD0. Rozwarta odcina odbiór, ' +
@@ -160,6 +179,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
       'a na wpisywane znaki nie reaguje wcale. Wygląda jak błąd programu, a to zdjęty mostek.',
   },
   JP25: {
+    chapter: 'zegar',
     title: 'JP25 — podłączenie kwarcu',
     what:
       'Zworka dołączająca rezonator kwarcowy 16 MHz do wyprowadzeń mikrokontrolera. ' +
@@ -171,6 +191,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
 
   // --- glowne elementy ---
   mcu: {
+    chapter: 'porty',
     title: 'ATmega32 — mikrokontroler',
     what:
       'Cały komputer w jednej obudowie: procesor, pamięć programu, pamięć robocza, liczniki, ' +
@@ -193,6 +214,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
     what: 'Świeci, gdy trwa przesyłanie programu do mikrokontrolera. Zgaśnięcie oznacza koniec wgrywania.',
   },
   ledRow: {
+    chapter: 'porty',
     title: 'Osiem diod LED',
     what:
       'Najprostszy sposób zobaczenia, co robi program: każda dioda pokazuje stan jednej linii portu. ' +
@@ -200,6 +222,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
     trap: 'Nic nie zaświeci się, dopóki port nie zostanie ustawiony jako wyjście (DDRx).',
   },
   segments: {
+    chapter: 'wyswietlacz-7seg',
     title: 'Wyświetlacz z czterech cyfr',
     what:
       'Cztery cyfry, każda z siedmiu kresek i kropki. Wszystkie cyfry współdzielą linie segmentów, ' +
@@ -207,6 +230,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
     trap: 'Zbyt wolne przełączanie widać jako migotanie, a zła kolejność jako blade „duchy” obcych segmentów.',
   },
   keypad: {
+    chapter: 'klawiatura',
     title: 'Klawiatura 4×4',
     what:
       'Szesnaście przycisków czytanych metodą skanowania: program po kolei podaje zero na każdą kolumnę ' +
@@ -220,6 +244,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
       'i tylko jeśli sam go odczytuje.',
   },
   lcd: {
+    chapter: 'lcd',
     title: 'Wyświetlacz tekstowy 2 × 16 znaków',
     what:
       'Dwa wiersze po szesnaście znaków, sterowane układem HD44780. Ma wbudowany alfabet i osiem ' +
@@ -238,6 +263,7 @@ export const BOARD_HELP: Record<string, BoardHelp> = {
 export const DECORATION_HELP: Record<string, BoardHelp> = {
   // --- lacze do komputera ---
   RS232: {
+    chapter: 'usart',
     title: 'Gniazdo kabla do komputera',
     what:
       'Trapezowe gniazdo łącza szeregowego. Tędy płytka wymienia znaki z programem terminala ' +
@@ -245,6 +271,7 @@ export const DECORATION_HELP: Record<string, BoardHelp> = {
     trap: 'Odbiór działa tylko przy założonej zworce JP4. Nadawanie działa zawsze.',
   },
   U6: {
+    chapter: 'usart',
     title: 'MAX232 — dopasowanie napięć',
     what:
       'Mikrokontroler nadaje napięciami 0 i 5 V, a łącze RS232 używa napięć dodatnich i ujemnych ' +
@@ -306,6 +333,7 @@ export const DECORATION_HELP: Record<string, BoardHelp> = {
       'te cztery linie portu C nie reagują na program.',
   },
   X1: {
+    chapter: 'zegar',
     title: 'X1 — kwarc 16 MHz',
     what:
       'Rezonator kwarcowy: generator taktu o dokładności lepszej niż jedna milionowa. Wbudowany generator ' +
@@ -394,6 +422,7 @@ export const DECORATION_HELP: Record<string, BoardHelp> = {
     what: 'Drugi stopień wzmocnienia sygnału z wejść analogowych.',
   },
   PR1: {
+    chapter: 'lcd',
     title: 'PR1 — kontrast wyświetlacza',
     what:
       'Potencjometr regulujący kontrast wyświetlacza tekstowego, czyli to, jak ciemne są znaki ' +

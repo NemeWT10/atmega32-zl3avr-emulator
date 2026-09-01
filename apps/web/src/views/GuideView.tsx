@@ -114,7 +114,8 @@ function BlockView({ block }: { block: Block }) {
   }
 }
 
-function Inline({ tokens }: { tokens: InlineToken[] }) {
+/** Wspolny renderer tekstu w linii - korzysta z niego takze kompendium. */
+export function Inline({ tokens }: { tokens: InlineToken[] }) {
   return (
     <>
       {tokens.map((token, index) => {

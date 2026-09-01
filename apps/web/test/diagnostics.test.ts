@@ -72,7 +72,9 @@ describe('poprawny kod nie wywołuje alarmów', () => {
 describe('błędy składniowe języka C', () => {
   it('wykrywa niedomkniętą klamrę i wskazuje miejsce jej otwarcia', () => {
     const code = 'int main(void)\n{\n    return 0;\n'
-    const found = analyse(code, FABRYCZNA_PLYTKA)
+    // Miniprogram nie ma tez zadnej petli, wiec obok bledu klamry pojawia sie
+    // informacja o zatrzymaniu programu - szukamy wiec po tresci, nie po indeksie.
+    const found = analyse(code, FABRYCZNA_PLYTKA).filter((item) => item.source === 'C')
     expect(found).toHaveLength(1)
     expect(found[0].line).toBe(2)
     expect(found[0].message).toContain('nie został zamknięty')
@@ -92,16 +94,20 @@ describe('błędy składniowe języka C', () => {
 describe('semantyka rejestrów AVR', () => {
   it('rozpoznaje rejestr z innego układu i podaje odpowiednik', () => {
     const code = '#include <avr/io.h>\nint main(void) { TIMSK0 = 0; return 0; }'
-    const found = analyse(code, FABRYCZNA_PLYTKA)
-    expect(found[0].message).toContain('ATmega32 nie ma rejestru TIMSK0')
-    expect(found[0].hint).toContain('TIMSK')
+    const found = analyse(code, FABRYCZNA_PLYTKA).find((item) =>
+      item.message.includes('TIMSK0'),
+    )
+    expect(found?.message).toContain('ATmega32 nie ma rejestru TIMSK0')
+    expect(found?.hint).toContain('TIMSK')
   })
 
   it('wyłapuje próbę skasowania flagi przez wyzerowanie bitu', () => {
     const code = '#include <avr/io.h>\nint main(void) { TIFR &= ~(1 << OCF0); return 0; }'
-    const found = analyse(code, FABRYCZNA_PLYTKA)
-    expect(found[0].message).toContain('nie skasujesz flagi')
-    expect(found[0].hint).toContain('ZAPISEM JEDYNKI')
+    const found = analyse(code, FABRYCZNA_PLYTKA).find((item) =>
+      item.message.includes('flagi'),
+    )
+    expect(found?.message).toContain('nie skasujesz flagi')
+    expect(found?.hint).toContain('ZAPISEM JEDYNKI')
   })
 
   it('wyłapuje zapis do UCSRC bez bitu URSEL', () => {

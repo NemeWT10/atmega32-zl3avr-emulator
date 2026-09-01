@@ -14,7 +14,11 @@
  */
 
 import type * as Monaco from 'monaco-editor'
+// Gramatyka C z paczki Monaco - rozszerzamy ja o typy <stdint.h>, ktorych
+// tam nie ma, zeby `uint8_t` podswietlal sie jak kazdy inny typ.
+import { language as cppLanguage } from 'monaco-editor/esm/vs/basic-languages/cpp/cpp'
 import { SYMBOLS, findSymbol, symbolToMarkdown } from '../knowledge/avr-symbols'
+import { chapterForSymbol, KOMPENDIUM_CHAPTERS, openKompendium } from '../kompendium/navigation'
 import { blankComments } from './strip-comments'
 
 export interface LocalSymbol {
@@ -394,6 +398,89 @@ export function registerAvrSupport(monaco: typeof Monaco): Monaco.IDisposable[] 
 
   const disposables: Monaco.IDisposable[] = []
 
+  /*
+    Gramatyka cpp w Monaco zna `int` i `unsigned`, ale nie zna typow
+    o gwarantowanej szerokosci - a to nimi pisze sie kod na mikrokontroler.
+    `uint8_t` w kolorze zwyklego identyfikatora wyglada na literowke.
+
+    Przy okazji uczymy gramatyke NAZW REJESTROW i NAZW BITOW z bazy symboli:
+    dostaja wlasne rodzaje tokenow (avr-register / avr-bit) i osobne kolory
+    w motywie nizej. `PORTA` czy `OCIE1A` przestaja wygladac jak zwykle
+    zmienne - widac od razu, ze to sprzet, nie kod studenta.
+  */
+  const grammar = cppLanguage as Monaco.languages.IMonarchLanguage & {
+    tokenizer: { root: unknown[] }
+  }
+  const avrIdentifiers: unknown[] = [
+    /[a-zA-Z_]\w*/,
+    {
+      cases: {
+        '@avrRegisters': { token: 'avr-register' },
+        '@avrBits': { token: 'avr-bit' },
+        '@keywords': { token: 'keyword.$0' },
+        '@default': 'identifier',
+      },
+    },
+  ]
+  // Regula [1] w cpp to identyfikatory (regula [0] lapie surowe napisy C++).
+  // Wstawiamy wlasna w jej miejsce; gdyby uklad gramatyki w paczce sie
+  // zmienil, wstawiamy na poczatek - wszystko dalej dziala, najwyzej
+  // literal `R"(...)"` (ktorego w C i tak nie ma) straci kolor napisu.
+  const cppRoot = grammar.tokenizer.root
+  const identifierIndex = cppRoot.findIndex(
+    (rule) => Array.isArray(rule) && String(rule[0]) === String(/[a-zA-Z_]\w*/),
+  )
+  const root =
+    identifierIndex >= 0
+      ? [...cppRoot.slice(0, identifierIndex), avrIdentifiers, ...cppRoot.slice(identifierIndex + 1)]
+      : [avrIdentifiers, ...cppRoot]
+
+  disposables.push(
+    monaco.languages.setMonarchTokensProvider('c', {
+      ...grammar,
+      keywords: [
+        ...(grammar.keywords as string[]),
+        'uint8_t', 'int8_t', 'uint16_t', 'int16_t', 'uint32_t', 'int32_t',
+        'uint64_t', 'int64_t', 'size_t', 'ssize_t', 'intptr_t', 'uintptr_t',
+      ],
+      avrRegisters: SYMBOLS.filter((symbol) => symbol.kind === 'register').map(
+        (symbol) => symbol.name,
+      ),
+      // Jednoliterowe nazwy bitow SREG (I, C, Z...) zostaja zwyklymi
+      // identyfikatorami - pomalowane lapaczki kolidowalyby ze zmiennymi.
+      avrBits: SYMBOLS.filter((symbol) => symbol.kind === 'bit' && symbol.name.length > 1).map(
+        (symbol) => symbol.name,
+      ),
+      tokenizer: { ...grammar.tokenizer, root },
+    } as Monaco.languages.IMonarchLanguage),
+  )
+
+  // Kolory obu nowych tokenow - motyw dziedziczy z vs-dark, wiec reszta
+  // wyglada dokladnie tak samo jak dotad.
+  monaco.editor.defineTheme('zl3avr-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'avr-register', foreground: '4FC1FF' },
+      { token: 'avr-bit', foreground: 'C586C0' },
+    ],
+    colors: {},
+  })
+
+  /*
+    Odnosniki z dymkow do kompendium ida przez polecenia Monaco: link
+    `command:zl3avr.kompendium.<rozdzial>` w zaufanym Markdownie wywoluje
+    zarejestrowana tu funkcje. Zwykly adres URL otworzylby nowa karte
+    przegladarki zamiast zakladki w aplikacji.
+  */
+  for (const chapter of KOMPENDIUM_CHAPTERS) {
+    disposables.push(
+      monaco.editor.registerCommand(`zl3avr.kompendium.${chapter.id}`, () =>
+        openKompendium(chapter.id),
+      ),
+    )
+  }
+
   disposables.push(
     monaco.languages.registerCompletionItemProvider('c', {
       triggerCharacters: ['<', '(', ' '],
@@ -410,7 +497,13 @@ export function registerAvrSupport(monaco: typeof Monaco): Monaco.IDisposable[] 
 
         for (const symbol of SYMBOLS) {
           suggestions.push({
-            label: symbol.name,
+            // Znacznik R/B przy nazwie: na liscie od razu widac, co jest
+            // rejestrem, a co pojedynczym bitem - zanim przeczyta sie opis.
+            label: {
+              label: symbol.name,
+              detail:
+                symbol.kind === 'register' ? '  R' : symbol.kind === 'bit' ? '  B' : undefined,
+            },
             kind: completionKind(monaco, symbol.kind),
             detail: symbol.summary,
             documentation: { value: symbolToMarkdown(symbol) },
@@ -477,7 +570,18 @@ export function registerAvrSupport(monaco: typeof Monaco): Monaco.IDisposable[] 
 
         const symbol = findSymbol(word.word)
         if (symbol) {
-          return { range, contents: [{ value: symbolToMarkdown(symbol) }] }
+          const contents: Monaco.IMarkdownString[] = [{ value: symbolToMarkdown(symbol) }]
+          // Dymek zostaje krotki - teoria mieszka w kompendium, dymek tylko
+          // do niej prowadzi. `isTrusted` jest warunkiem dzialania linku
+          // `command:` w Markdownie Monaco.
+          const chapter = chapterForSymbol(symbol.name)
+          if (chapter) {
+            contents.push({
+              value: `[📖 Kompendium — rozdział „${chapter.label}”](command:zl3avr.kompendium.${chapter.id} "Otwiera zakładkę Kompendium")`,
+              isTrusted: true,
+            })
+          }
+          return { range, contents }
         }
 
         const local = findLocalSymbol(

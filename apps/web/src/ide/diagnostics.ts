@@ -111,6 +111,55 @@ const WRONG_VECTORS: Record<string, string> = {
   WDT_vect: '— watchdog w ATmega32 tylko zeruje uklad, nie zglasza przerwania',
 }
 
+/**
+ * Wektor przerwania → rejestr i bit, ktory to przerwanie odblokowuje.
+ *
+ * Z tej mapy zyja dwie reguly-lustra:
+ *  - bit wlaczony, a procedury ISR nigdzie nie ma → program przy pierwszym
+ *    przerwaniu skacze do pustego wektora i avr-libc zaczyna go OD NOWA
+ *    (wyglada jak samoczynny restart — jeden z najtrudniejszych bledow
+ *    do znalezienia golym okiem),
+ *  - procedura ISR jest, ale bitu nikt nie ustawia → przerwanie nigdy
+ *    sie nie wykona i kod wyglada na „zepsuty bez powodu".
+ *
+ * Zrodlo przyporzadkowania: datasheet ATmega32, rozdzialy o TIMSK, GICR,
+ * UCSRB i rejestrach pozostalych peryferiow.
+ */
+const VECTOR_ENABLE: Record<string, { register: string; bit: string; event: string }> = {
+  TIMER0_COMP_vect: { register: 'TIMSK', bit: 'OCIE0', event: 'porównanie licznika TC0' },
+  TIMER0_OVF_vect: { register: 'TIMSK', bit: 'TOIE0', event: 'przepełnienie licznika TC0' },
+  TIMER1_CAPT_vect: { register: 'TIMSK', bit: 'TICIE1', event: 'przechwycenie stanu licznika TC1' },
+  TIMER1_COMPA_vect: { register: 'TIMSK', bit: 'OCIE1A', event: 'porównanie A licznika TC1' },
+  TIMER1_COMPB_vect: { register: 'TIMSK', bit: 'OCIE1B', event: 'porównanie B licznika TC1' },
+  TIMER1_OVF_vect: { register: 'TIMSK', bit: 'TOIE1', event: 'przepełnienie licznika TC1' },
+  TIMER2_COMP_vect: { register: 'TIMSK', bit: 'OCIE2', event: 'porównanie licznika TC2' },
+  TIMER2_OVF_vect: { register: 'TIMSK', bit: 'TOIE2', event: 'przepełnienie licznika TC2' },
+  INT0_vect: { register: 'GICR', bit: 'INT0', event: 'przerwanie zewnętrzne INT0' },
+  INT1_vect: { register: 'GICR', bit: 'INT1', event: 'przerwanie zewnętrzne INT1' },
+  INT2_vect: { register: 'GICR', bit: 'INT2', event: 'przerwanie zewnętrzne INT2' },
+  USART_RXC_vect: { register: 'UCSRB', bit: 'RXCIE', event: 'odebranie znaku przez USART' },
+  USART_TXC_vect: { register: 'UCSRB', bit: 'TXCIE', event: 'koniec nadawania przez USART' },
+  USART_UDRE_vect: { register: 'UCSRB', bit: 'UDRIE', event: 'pusty bufor nadawania USART' },
+  ADC_vect: { register: 'ADCSRA', bit: 'ADIE', event: 'koniec pomiaru przetwornika ADC' },
+  SPI_STC_vect: { register: 'SPCR', bit: 'SPIE', event: 'koniec transmisji SPI' },
+  TWI_vect: { register: 'TWCR', bit: 'TWIE', event: 'zdarzenie magistrali TWI' },
+  EE_RDY_vect: { register: 'EECR', bit: 'EERIE', event: 'gotowość pamięci EEPROM' },
+  ANA_COMP_vect: { register: 'ACSR', bit: 'ACIE', event: 'komparator analogowy' },
+}
+
+/**
+ * Rejestry 8-bitowe, dla ktorych pilnujemy zakresu wartosci i numerow bitow.
+ *
+ * To KNOWN_REGISTERS bez nazw zlozonych z dwoch rejestrow (TCNT1, OCR1A/B,
+ * ICR1, ADC, EEAR) - te avr-libc skleja w pary 16-bitowe i wieksze wartosci
+ * sa tam poprawne.
+ */
+const EIGHT_BIT_REGISTERS = new Set(
+  [...KNOWN_REGISTERS].filter(
+    (name) => !['TCNT1', 'OCR1A', 'OCR1B', 'ICR1', 'ADC', 'EEAR'].includes(name),
+  ),
+)
+
 /** Usuwa komentarze i tresc literalow, zeby reguly nie reagowaly na tekst w cudzyslowie. */
 function stripNoise(source: string): Line[] {
   const lines: Line[] = []
@@ -490,18 +539,49 @@ function checkAvrSemantics(
       )
     }
 
-    // --- OCR0 poza zakresem
-    const ocrValue = /\bOCR0\s*=\s*(\d+)/.exec(trimmed)
-    if (ocrValue && Number(ocrValue[1]) > 255) {
+    // --- wartosc nie miesci sie w rejestrze 8-bitowym
+    //
+    // Tylko literaly liczbowe: o wyrazeniach i zmiennych nie da sie orzec
+    // bez wykonania programu, a falszywy alarm jest gorszy niz brak ostrzezenia.
+    for (const literalWrite of trimmed.matchAll(
+      /\b([A-Z][A-Z0-9]{1,7})\s*=\s*(0[xX][0-9a-fA-F]+|\d+)\s*[;,)]/g,
+    )) {
+      if (!EIGHT_BIT_REGISTERS.has(literalWrite[1]) || Number(literalWrite[2]) <= 255) continue
+      const register = literalWrite[1]
+      const isTimerValue = /^(OCR0|OCR2|TCNT0|TCNT2)$/.test(register)
       add(
         diagnostics,
         line,
-        ocrValue[0],
+        literalWrite[0],
         'error',
         'AVR',
-        `OCR0 jest rejestrem 8-bitowym — wartość ${ocrValue[1]} się w nim nie zmieści.`,
-        'Zwiększ preskaler albo wydłuż odmierzany czas tak, żeby wynik zmieścił się w przedziale 0–255.',
+        `${register} jest rejestrem 8-bitowym — wartość ${literalWrite[2]} się w nim nie zmieści.`,
+        isTimerValue
+          ? 'Zwiększ preskaler albo wydłuż odmierzany czas tak, żeby wynik zmieścił się w przedziale 0–255. ' +
+            'Do dłuższych czasów służy 16-bitowy licznik TC1 (OCR1A mieści 0–65535).'
+          : 'Rejestr mieści wartości 0–255. Starsze bity zapisu po prostu przepadną.',
       )
+    }
+
+    // --- przesuniecie jedynki poza rejestr 8-bitowy: (1 << 9)
+    const shiftTarget = /\b([A-Z][A-Z0-9]{1,7})\s*[|^]?=(?!=)/.exec(trimmed)
+    if (shiftTarget && EIGHT_BIT_REGISTERS.has(shiftTarget[1])) {
+      const badShift = /\b1\s*<<\s*(\d+)/g
+      let shift: RegExpExecArray | null
+      while ((shift = badShift.exec(trimmed)) !== null) {
+        if (Number(shift[1]) <= 7) continue
+        add(
+          diagnostics,
+          line,
+          shift[0],
+          'error',
+          'AVR',
+          `W rejestrze ${shiftTarget[1]} nie ma bitu ${shift[1]} — bity numeruje się od 0 do 7.`,
+          '`1 << n` przesuwa jedynkę na pozycję n. W rejestrze 8-bitowym pozycje 8 i wyższe ' +
+            'wypadają poza rejestr, więc taki zapis niczego nie zmienia.',
+        )
+        break
+      }
     }
 
     // --- zbieranie informacji do kontroli calego pliku
@@ -631,6 +711,83 @@ function checkAvrSemantics(
       'AVR',
       'F_CPU jest zdefiniowane PO włączeniu nagłówka opóźnień — nagłówek go nie zobaczy.',
       'Przenieś `#define F_CPU ...` nad linię `#include <util/delay.h>`.',
+    )
+  }
+
+  checkInterruptPairs(lines, diagnostics, projectCode)
+
+  // --- main bez zadnej petli: program wykona sie raz i stanie
+  //
+  // Celowo najostrozniejsza wersja tej reguly: milczymy, gdy GDZIEKOLWIEK
+  // w projekcie jest `while` albo `for` - kazda petla moze byc ta nieskonczona
+  // (takze `while (dziala)` ze zmienna). Odzywamy sie tylko wtedy, gdy petli
+  // nie ma wcale, czyli w programie pisanym pierwszy raz w zyciu.
+  const mainLine = lines.find((line) => /\b(int|void)\s+main\s*\(/.test(line.code))
+  if (mainLine && !/\b(while|for)\s*\(/.test(projectCode)) {
+    add(
+      diagnostics,
+      mainLine,
+      'main',
+      'info',
+      'AVR',
+      'main dojdzie do końca i program się zatrzyma — mikrokontroler nie zrobi już nic aż do resetu.',
+      'Na mikrokontrolerze nie ma systemu, do którego można wrócić po zakończeniu programu ' +
+        '(avr-libc zamyka go wtedy w pustej pętli z wyłączonymi przerwaniami). ' +
+        'Zwykle całą pracę programu zamyka się w nieskończonej pętli `while (1) { ... }` na końcu main.',
+    )
+  }
+}
+
+/**
+ * Dwie reguly-lustra wokol par „bit wlaczajacy przerwanie ↔ procedura ISR”.
+ *
+ * Obie strony tej pary psuja sie po cichu: kompilator nie wie, ze OCIE0
+ * i TIMER0_COMP_vect maja sie spotkac, wiec zbuduje program z kazda polowka
+ * osobno. Z wlaczonym bitem bez procedury program RESTARTUJE SIE przy
+ * pierwszym przerwaniu; z procedura bez bitu — przerwanie po prostu milczy.
+ */
+function checkInterruptPairs(lines: Line[], diagnostics: Diagnostic[], projectCode: string): void {
+  for (const line of lines) {
+    const trimmed = line.code
+
+    // --- bit wlaczony, a procedury nigdzie nie ma
+    for (const [vector, enable] of Object.entries(VECTOR_ENABLE)) {
+      if (!new RegExp(`\\b${enable.bit}\\b`).test(trimmed)) continue
+      // Tylko zapis mogacy bit USTAWIC: `REG = ...` albo `REG |= ...`.
+      // `&=` i `^=` moga go kasowac albo przelaczac - o nich milczymy.
+      if (!new RegExp(`\\b${enable.register}\\s*\\|?=(?!=)`).test(trimmed)) continue
+      if (new RegExp(`\\b(ISR|SIGNAL)\\s*\\(\\s*${vector}\\b`).test(projectCode)) continue
+      add(
+        diagnostics,
+        line,
+        enable.bit,
+        'warning',
+        'AVR',
+        `Bit ${enable.bit} włącza przerwanie (${enable.event}), ale w projekcie nie ma procedury ISR(${vector}).`,
+        'Przerwanie bez procedury obsługi trafia w pusty wektor i avr-libc zaczyna program OD NOWA — ' +
+          `wygląda to jak samoczynny restart bez śladu błędu. Dopisz \`ISR(${vector}) { ... }\` ` +
+          'albo nie ustawiaj tego bitu.',
+      )
+    }
+
+    // --- procedura jest, wlaczenia nie widac nigdzie w projekcie
+    const isr = /\b(?:ISR|SIGNAL)\s*\(\s*([A-Z0-9_]+_vect)\b/.exec(trimmed)
+    if (!isr) continue
+    const enable = VECTOR_ENABLE[isr[1]]
+    if (!enable) continue
+    if (new RegExp(`\\b${enable.bit}\\b`).test(projectCode)) continue
+    // Rejestr bywa zapisywany liczba albo wybierany wskaznikiem - kazda
+    // wzmianka o nim w projekcie wystarcza, zebysmy zamilkli.
+    if (new RegExp(`\\b${enable.register}\\b`).test(projectCode)) continue
+    add(
+      diagnostics,
+      line,
+      isr[1],
+      'info',
+      'AVR',
+      `Procedura ISR(${isr[1]}) jest gotowa, ale nigdzie nie włączasz tego przerwania — nie wykona się ani razu.`,
+      `Samo napisanie procedury nie uruchamia przerwania. Odblokuj je: \`${enable.register} |= (1 << ${enable.bit});\` ` +
+        'i zezwól globalnie przez `sei()`.',
     )
   }
 }
@@ -840,7 +997,29 @@ function checkWiring(lines: Line[], diagnostics: Diagnostic[], hardware: Hardwar
       if (!firstUse.has(use.port)) firstUse.set(use.port, { line, marker: use.marker })
     }
   }
-  if (firstUse.size === 0) return
+
+  /**
+   * Slady uzycia przerwan zewnetrznych - LICZA SIE OSOBNO, bo kod z INT0
+   * czesto w ogole nie wymienia PORTD ani PIND (wystarcza GICR i ISR),
+   * a pin przerwania jest zwyklym pinem: bez przewodu nie ma go czym wyzwolic.
+   * Przypisanie linii: INT0=PD2, INT1=PD3, INT2=PB2 (datasheet ATmega32).
+   */
+  const INT_PINS: { name: string; port: PortName; pin: number; pinLabel: string }[] = [
+    { name: 'INT0', port: 'D', pin: 2, pinLabel: 'PD2' },
+    { name: 'INT1', port: 'D', pin: 3, pinLabel: 'PD3' },
+    { name: 'INT2', port: 'B', pin: 2, pinLabel: 'PB2' },
+  ]
+  const intUses = INT_PINS.flatMap((int) => {
+    const use = lines.find(
+      (item) =>
+        new RegExp(`\\bISR\\s*\\(\\s*${int.name}_vect\\b`).test(item.code) ||
+        (new RegExp(`\\bGICR\\s*\\|?=(?!=)`).test(item.code) &&
+          new RegExp(`\\b${int.name}\\b`).test(item.code)),
+    )
+    return use ? [{ int, use }] : []
+  })
+
+  if (firstUse.size === 0 && intUses.length === 0) return
 
   // --- plytka bez ani jednego przewodu
   //
@@ -848,7 +1027,9 @@ function checkWiring(lines: Line[], diagnostics: Diagnostic[], hardware: Hardwar
   // a nie cztery osobne problemy. Jest to `info`, a nie ostrzezenie - pisanie
   // kodu przed poprowadzeniem przewodow jest zupelnie normalna kolejnoscia pracy.
   if (wiring.total === 0) {
-    const first = [...firstUse.values()][0]
+    const first =
+      [...firstUse.values()][0] ??
+      { line: intUses[0].use, marker: intUses[0].int.name }
     add(
       diagnostics,
       first.line,
@@ -863,9 +1044,11 @@ function checkWiring(lines: Line[], diagnostics: Diagnostic[], hardware: Hardwar
   }
 
   // --- port uzyty w kodzie, ale bez ani jednej zyly
+  const warnedPorts = new Set<PortName>()
   for (const [port, use] of firstUse) {
     const wired = wiring.ports[port]
     if (wired.count > 0) continue
+    warnedPorts.add(port)
 
     // Co JEST podlaczone - bez tego komunikat mowi tylko „czegos brakuje”,
     // a z tym student widzi od razu, ze pomylil zlacze.
@@ -883,6 +1066,28 @@ function checkWiring(lines: Line[], diagnostics: Diagnostic[], hardware: Hardwar
       (elsewhere.length > 0
         ? `Podłączone są za to: ${elsewhere.join('; ')}. Sprawdź, czy żyły nie trafiły na sąsiednie złącze. `
         : '') + 'Połączenia poprowadzisz na zakładce „Płytka”.',
+    )
+  }
+
+  // --- przerwanie zewnetrzne na linii bez przewodu
+  for (const { int, use } of intUses) {
+    // Gdy caly port dostal juz ostrzezenie o braku przewodow, drugi komunikat
+    // o tym samym mowilby to samo innymi slowami.
+    if (warnedPorts.has(int.port)) continue
+    const wired = wiring.ports[int.port]
+    if (wired.pins.includes(int.pin)) continue
+    add(
+      diagnostics,
+      use,
+      int.name,
+      'warning',
+      'Płytka',
+      `Przerwanie ${int.name} nasłuchuje na linii ${int.pinLabel}, a z tej linii nie wychodzi żaden przewód.`,
+      (wired.count > 0
+        ? `Z portu ${int.port} idą przewody (linie ${wired.pins.map((pin) => `P${int.port}${pin}`).join(', ')}), ale żaden z ${int.pinLabel}. `
+        : '') +
+        `Połącz ${int.pinLabel} na złączu portu ${int.port} z tym, co ma wyzwalać przerwanie — ` +
+        'np. z linią klawiatury albo innym źródłem sygnału.',
     )
   }
 

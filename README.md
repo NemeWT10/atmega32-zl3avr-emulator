@@ -191,6 +191,11 @@ napisaniem pierwszej linii widać, że połączenia działają.
 
 **Edytor kodu**
 - podświetlanie składni C, skróty jak w typowym IDE, wielokrotny kursor, szukanie i zamiana
+- **nazwy rejestrów i bitów mają własne kolory** (rejestry inne niż bity), a typy
+  `uint8_t`/`uint16_t` podświetlają się jak słowa kluczowe; na liście podpowiedzi rejestry
+  i bity są oznaczone literami **R** i **B**
+- dymek rejestru czy bitu prowadzi **wprost do właściwego rozdziału Kompendium** —
+  teoria jest o jedno kliknięcie od kodu
 - zarządzanie plikami: tworzenie z szablonem, zmiana nazwy, usuwanie, wczytywanie z dysku,
   pobieranie pojedynczo i całego projektu jako archiwum ZIP
 - projekt zapamiętywany między sesjami w przeglądarce
@@ -213,17 +218,55 @@ napisaniem pierwszej linii widać, że połączenia działają.
   po prostu nigdy w nie nie wchodzi), kasowanie flagi przez zerowanie bitu,
   `UCSRC` bez `URSEL`, zapis do `PORTx` bez `DDRx`, odczyt wejść z `PORTx` zamiast `PINx`,
   brakujące nagłówki (w tym `PROGMEM` bez `avr/pgmspace.h`), przerwanie bez `sei()`,
-  wartość poza zakresem rejestru, `%f` w `printf` (avr-libc drukuje wtedy „?”)
+  wartość i numer bitu poza zakresem rejestru 8-bitowego, `%f` w `printf`
+  (avr-libc drukuje wtedy „?”), **bit włączający przerwanie bez procedury ISR**
+  (program restartuje się przy pierwszym przerwaniu — jeden z najtrudniejszych błędów
+  do zauważenia), procedura ISR, której nikt nie włącza, oraz `main` bez żadnej pętli
+  (program wykona się raz i stanie)
 - *Płytka* — ostrzeżenia zależne od **aktualnego stanu sprzętu**: rozjazd `F_CPU` z zegarem
   z fuse bitów, sterowanie portem C przy włączonym JTAGEN, odbiór przez USART przy rozwartej
   zworce JP4, odczyt wejść bez pull-upów oraz **brakujące przewody** — „program używa portu B,
   a ze złącza tego portu nie wychodzi żadna żyła; podłączony jest za to port D → Diody LED".
+  Także **pin przerwania zewnętrznego**: kod z `INT0` w ogóle nie wymienia portu D,
+  a analiza i tak powie, że z linii PD2 nie wychodzi żaden przewód.
   **Tego nie zrobi żaden kompilator**, bo nie wie, jak ustawiona jest płytka
+- analiza obejmuje **wszystkie pliki projektu naraz** — ostrzeżenie o brakującym przewodzie
+  pojawia się także wtedy, gdy port ustawia sterownik w innym pliku niż otwarty;
+  lista problemów podpisuje każdy wpis nazwą pliku
 
 **Podgląd wnętrza mikrokontrolera**
 - rejestry rozłożone na **nazwane bity**, nie na ciąg zer i jedynek
 - opis każdego rejestru i każdego bitu po najechaniu
 - krokowanie po jednej instrukcji, licznik taktów i czasu, regulacja tempa symulacji
+
+**Kalkulator timerów** — zakładka, która przelicza polecenie „mrugaj co 100 ms"
+na wartości rejestrów licznika
+- wpisujesz to, co znasz — czas (albo częstotliwość), tryb, preskaler lub gotowe OCR —
+  a kalkulator pokazuje **wszystkie pasujące konfiguracje** z osiągniętym czasem i błędem
+- działa w obie strony: z czasu wylicza rejestry, z wpisanego OCR/TCNT wylicza czas
+- gdy czas nie mieści się w wybranym liczniku, mówi o tym wprost i **podpowiada licznik,
+  który trafi** (klasyka: 100 ms nie mieści się w 8-bitowym TC0, ale TC1 trafia co do taktu)
+- na czas za długi dla samego licznika pokazuje **odliczanie programowe**: krótsze zdarzenie
+  bazowe plus zmienna globalna zliczająca powtórzenia (np. sekunda na TC0 przy ÷256
+  to 125 zdarzeń po 8 ms) — razem z gotowym kodem; ta podpowiedź pojawia się **tylko**
+  wtedy, gdy licznik naprawdę jest za krótki
+- znaną wartość rejestru podaje się jawnie: **lista wyboru** (OCR czy startowe TCNT)
+  plus pole liczby — bez zgadywania, co kalkulator zrozumie
+- kliknięcie wiersza daje **gotową funkcję do wklejenia** — w wersji z pętlą sprawdzającą
+  flagę albo z przerwaniem, z komentarzami albo bez (pole wyboru)
+- częstotliwość zegara podpowiada się **z fuse bitów płytki**, ikona „?" pokazuje krótką
+  ściągę z animowanym wykresem trybu CTC
+
+**Kompendium wiedzy** — teoria do ćwiczeń w dziewięciu rozdziałach: operacje bitowe,
+porty, zegar i F_CPU, timery, przerwania, klawiatura matrycowa, wyświetlacz 7-segmentowy,
+LCD (HD44780) i USART
+- krótkie rozdziały z przykładami kodu, tabelami rejestrów i sekcją **typowych pułapek**
+- klawiatura, wyświetlacz 7-segmentowy i LCD mają **animowane pokazy** (skanowanie matrycy,
+  multipleks ze zwolnionym tempem, wpisywanie znaków z przeskokiem do drugiej linii)
+- pomoc na płytce, podgląd rejestrów i dymki edytora **linkują do właściwych rozdziałów**
+  zamiast powtarzać tę samą wiedzę w trzech miejscach
+- warstwa merytoryczna pochodzi z kart katalogowych ATmega32 i HD44780 oraz dokumentacji
+  płytki — każdą wartość można sprawdzić u źródła
 
 **Terminal szeregowy**
 - odpowiednik terminala na komputerze, z **własną** prędkością transmisji
@@ -267,7 +310,7 @@ Płytka zachowuje się jak prawdziwa. Znaczy to również, że **da się ją pod
 i wtedy nie zadziała — dokładnie tak samo jak na zajęciach. To nie jest usterka
 narzędzia, tylko sedno ćwiczenia.
 
-Program ma pięć zakładek (plus ten poradnik):
+Program ma siedem zakładek (plus ten poradnik):
 
 | Zakładka | Do czego służy |
 |---|---|
@@ -276,6 +319,8 @@ Program ma pięć zakładek (plus ten poradnik):
 | **Symulator** | podgląd wnętrza układu: rejestry rozłożone na nazwane bity, krokowanie |
 | **Terminal USART** | odpowiednik terminala na komputerze podłączonym kablem szeregowym |
 | **Komputer PC** | skrypt w Pythonie po drugiej stronie tego kabla (potrzebny w L7) |
+| **Kalkulator timerów** | przelicza „mrugaj co 100 ms" na wartości rejestrów licznika — i z powrotem |
+| **Kompendium** | teoria do ćwiczeń: porty, timery, przerwania, wyświetlacze, klawiatura, USART |
 
 ### Od czego zacząć
 
@@ -312,6 +357,41 @@ zamiast kazać ich szukać w liczącym kilkaset stron datasheecie.
   wracają po wyłączeniu przełącznika.
 - Lista **„Problemy"** pod edytorem zbiera komunikaty kompilatora ze wszystkich plików
   i ostrzeżenia zależne od stanu płytki. Kliknięcie w problem przenosi do jego linii.
+- Nazwy **rejestrów i bitów mają w kodzie własne kolory**, a na liście podpowiedzi
+  litery **R** i **B** mówią od razu, co jest czym. Dymek rejestru prowadzi też do
+  właściwego rozdziału zakładki **Kompendium**.
+
+### Kompendium — teoria pod ręką
+
+Zakładka **Kompendium** to krótki podręcznik do ćwiczeń: dziewięć rozdziałów
+od operacji bitowych, przez porty, zegar, timery i przerwania, po klawiaturę,
+oba wyświetlacze i USART. Każdy rozdział ma przykład kodu, tabelę najważniejszych
+rejestrów i sekcję typowych pułapek; klawiatura i wyświetlacze mają **animowane
+pokazy** — widać na przykład, że w danej chwili świeci tylko jedna cyfra
+wyświetlacza, zanim odświeżanie „przyspieszy".
+
+Nie trzeba tam trafiać ręcznie: opisy elementów na płytce, grupy rejestrów
+w Symulatorze i dymki w edytorze mają odnośniki wprost do właściwego rozdziału.
+
+### Kalkulator timerów
+
+Zakładka **Kalkulator timerów** przelicza polecenie w rodzaju „mrugaj co 100 ms"
+na wartości rejestrów — i działa w obie strony.
+
+1. **Wpisz, co znasz.** Sam czas? Zostaw tryb i preskaler na „dowolny" — zobaczysz
+   wszystkie konfiguracje, które trafiają. Prowadzący podał preskaler albo tryb?
+   Zablokuj je, a lista się dopasuje. Masz gotowe `OCR0`? Wpisz je w „Wartość
+   rejestru", a kalkulator policzy czas w drugą stronę.
+2. **Kliknij wiersz z wynikiem** — pod tabelą pojawi się gotowa funkcja do wklejenia:
+   w wersji z pętlą sprawdzającą flagę albo z przerwaniem, z komentarzami albo bez.
+3. Gdy czas **nie mieści się w wybranym liczniku**, kalkulator mówi o tym wprost
+   i podpowiada licznik, który trafi (np. 100 ms wymaga 16-bitowego TC1) — a jeśli
+   ograniczenia zostawiają tylko za krótki licznik, pokazuje **odliczanie programowe**:
+   krótsze zdarzenie bazowe i zmienną globalną, która zlicza powtórzenia.
+
+Częstotliwość zegara podpowiada się z fuse bitów płytki — to ta sama pułapka,
+o której mówi rozdział „Zegar i F_CPU" w Kompendium: rzeczywisty zegar ustawiają
+fuse bity, nie `#define F_CPU`.
 
 ### Jak prowadzić przewody
 

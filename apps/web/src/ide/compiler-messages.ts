@@ -111,6 +111,66 @@ const EXPLANATIONS: { pattern: RegExp; hint: string }[] = [
     pattern: /unused variable/,
     hint: 'Zmienna zadeklarowana, ale nigdzie nieużyta. Zwykle to literówka albo pozostałość po zmianach.',
   },
+  {
+    pattern: /unknown type name/,
+    hint:
+      'Kompilator nie zna tej nazwy typu. Typy `uint8_t`/`uint16_t` przychodzą z nagłówkiem ' +
+      '`#include <avr/io.h>` (albo `<stdint.h>`). Jeśli to własny typ — sprawdź literówkę ' +
+      'i czy jego definicja jest nad miejscem użycia.',
+  },
+  {
+    pattern: /conflicting types for/,
+    hint:
+      'Ta sama nazwa jest zadeklarowana w dwóch miejscach z różnymi typami — najczęściej funkcja ' +
+      'została wywołana PRZED definicją i kompilator zgadł jej typ inaczej. Dopisz prototyp na górze pliku, ' +
+      'np. `void moja_funkcja(uint8_t x);`.',
+  },
+  {
+    pattern: /multiple definition of|duplicate symbol|redefinition of/,
+    hint:
+      'Ta sama funkcja lub zmienna jest zdefiniowana dwa razy — zwykle w dwóch plikach projektu naraz ' +
+      '(np. kod wklejony do drugiego pliku) albo przez `#include` pliku `.c` zamiast `.h`.',
+  },
+  {
+    pattern: /statement with no effect|expression result unused/,
+    hint:
+      'Ta linia niczego nie zmienia. Najczęściej stoi w niej porównanie `==` tam, gdzie miało być ' +
+      'przypisanie `=` — porównanie tylko wylicza prawdę/fałsz i wyrzuca wynik.',
+  },
+  {
+    pattern: /(left )?shift count >= width of type/,
+    hint:
+      'Przesunięcie o tyle pozycji wypycha bit poza zmienną — wynik nie ma sensu. W rejestrach ' +
+      '8-bitowych bity numeruje się od 0 do 7.',
+  },
+  {
+    pattern: /overflow in implicit constant conversion|changes value from|conversion from .* changes value/,
+    hint:
+      'Wpisywana wartość nie mieści się w docelowej zmiennej lub rejestrze — starsze bity przepadną. ' +
+      'Rejestry portów są 8-bitowe: mieszczą 0–255.',
+  },
+  {
+    pattern: /comparison is always (true|false) due to limited range|comparison of constant .* is always/,
+    hint:
+      'To porównanie ma zawsze ten sam wynik, bo zmienna fizycznie nie może osiągnąć porównywanej ' +
+      'wartości — np. `uint8_t` nigdy nie przekroczy 255.',
+  },
+  {
+    pattern: /return type of ['`"]?main['`"]? is not ['`"]?int|['`"]main['`"] must return ['`"]int/,
+    hint:
+      'W języku C funkcja main zwraca `int` — pisz `int main(void)` i zakończ ją `return 0;` ' +
+      '(albo nieskończoną pętlą, jak zwykle na mikrokontrolerze).',
+  },
+  {
+    pattern: /expected identifier or ['`"]?\(/,
+    hint:
+      'Kompilator spodziewał się tu nazwy — najczęściej winna jest poprzednia linia: zabłąkany średnik, ' +
+      'nadmiarowa klamra albo niedokończona deklaracja.',
+  },
+  {
+    pattern: /format ['`"]?%.*expects argument of type|format specifies type/,
+    hint: 'Znacznik formatu (np. `%d`) nie zgadza się z typem podanego argumentu.',
+  },
 ]
 
 /** Dopisuje do komunikatu wyjasnienie po polsku, jesli je znamy. */
